@@ -90,7 +90,7 @@ def build_datset(force = False):
         import kaggle as kg
         
         kagglehub.whoami()
-        kg.api.dataset_download_files("jeleeladekunlefijabi/ship-performance-clustering-dataset", path=__dataset_dir, unzip=True, force=force)
+        kg.api.dataset_download_files("aadharshviswanath/aircraft-sensor-and-engine-performance", path=__dataset_dir, unzip=True, force=force)
         
     return get_dataset()
 
@@ -147,25 +147,14 @@ def normalize_dataset(
         with open(label_path, 'w') as fw:
             json.dump(label_dict, fw, indent=2)
     
-    # if reverse :
-    #     df[great_values] = 10 ** (df[great_values].values + 5)
-    #     df[big_values]  *= stats.loc[big_values, 'max']
-    #     df[mid_values]  *= 100
-    #     df[low_values]  *= 10
-    # else :
-    #     df[great_values] = np.log10(df[great_values].values) - 5
-    #     df[big_values]  /= stats.loc[big_values, 'max']
-    #     df[mid_values]  /= 100
-    #     df[low_values]  /= 10
-    
     if reverse :
-        df[great_values] = (df[great_values].values +0.5) * (10 ** np.ceil(np.log10(stats.loc[great_values, 'max'].values)))[None,:]
-        df[big_values]   = (df[big_values].values   +0.5) * (10 ** np.ceil(np.log10(stats.loc[big_values,   'max'].values)))[None,:]
+        df[great_values] = 10 ** (df[great_values].values + 5)
+        df[big_values]  *= stats.loc[big_values, 'max']
         df[mid_values]  *= 100
         df[low_values]  *= 10
     else :
-        df[great_values] = df[great_values].values / (10 ** np.ceil(np.log10(stats.loc[great_values, 'max'].values)))[None,:] - 0.5
-        df[big_values]   = df[big_values].values   / (10 ** np.ceil(np.log10(stats.loc[big_values,   'max'].values)))[None,:] - 0.5
+        df[great_values] = np.log10(df[great_values].values) - 5
+        df[big_values]  /= stats.loc[big_values, 'max']
         df[mid_values]  /= 100
         df[low_values]  /= 10
     
@@ -173,6 +162,8 @@ def normalize_dataset(
 
 if __name__ == '__main__':
     # Download latest version
+    print('FIX THIS')
+    exit()
     df = build_datset()
 
     label_dict = create_labels(df, force=True)

@@ -4,26 +4,27 @@
 # Configuration arguments
 # -- Leave empty for default values
 ########################################
-TEST_VERSION=HuberLoss-square # TestLoss
+TEST_VERSION=HuberLoss-linearly_normalized # TestLoss
 SEED=42
 
 LAYERS="256 256 256"
-NUM_GRIDS=
-GRID_MIN=
-GRID_MAX=
-SCALE=
+NUM_GRIDS="4"               #  4
+GRID_MIN=-1.25              # -1.2
+GRID_MAX=0.25               #  0.25
+SCALE=1.5                   #  2
 
 EPOCHS=10000
-BATCH=64
-LR=3e-4
-OPTIMIZER= #"RMSprop"
-WEIGHT_DECAY=
-MODE='square'
+BATCH=128
+LR=1e-3
+OPTIMIZER="RMSprop"         # Adam
+WEIGHT_DECAY=5e-4           # 1e-4
+MOMENTUM=                   # 0.9
+MODE='RSWAFF'
+RESIDUAL=                   # 0 / 1
 
 ########################################
 # DO NOT ALTER BEYOND THIS POINT
 ########################################
-
 PARAMS=""  # to store positional arguments
 
 dryrun=0
@@ -54,6 +55,7 @@ usage () {
     echo Parameters
     echo "      -h                     Prints out help"
     echo "      -s, --seed             Change the seed"
+    echo "      --residual             Set the residual flag"
     echo "      -d, --dryrun           Dry run of the script"
     echo "      -v, --verbose          Prints the to be executed commands"
     echo "      -p, --purge            Purges any existing output files before generating them"
@@ -79,6 +81,9 @@ while [ "$#" -gt 0 ] ; do
             SEED=$2
             shift 
             shift ;;
+        --residual)
+            RESIDUAL=1
+            shift ;;
         -*|--*=)  # unsupported flags
             echo "Error: Unsupported flag $1" >&2
             exit 1 ;;
@@ -95,13 +100,6 @@ THIS_DIR=$(dirname $(realpath $0))
 print_exec cd $(dirname $THIS_DIR)
 
 CONFIGS=""
-if [ -n "$TEST_VERSION" ]; then
-    CONFIGS="$CONFIGS --test-version $TEST_VERSION"
-fi 
-if [ -n "$SEED" ]; then
-    CONFIGS="$CONFIGS --seed $SEED"
-fi
-
 if [ -n "$LAYERS" ]; then
     CONFIGS="$CONFIGS --layers $LAYERS"
 fi 
@@ -120,6 +118,22 @@ fi
 
 if [ -n "$MODE" ]; then
     CONFIGS="$CONFIGS --mode $MODE"
+
+    if [ -n "$TEST_VERSION" ]; then
+        TEST_VERSION="${MODE}-${TEST_VERSION}"
+    else
+        TEST_VERSION=$MODE
+    fi
+fi 
+
+if [[ -n "$RESIDUAL" ]] && [[ "$RESIDUAL" -gt 0 ]]; then
+    CONFIGS="$CONFIGS --residual"
+
+    if [ -n "$TEST_VERSION" ]; then
+        TEST_VERSION="res-${TEST_VERSION}"
+    else
+        TEST_VERSION=$MODE
+    fi
 fi 
 
 if [ -n "$EPOCHS" ]; then
@@ -139,6 +153,16 @@ fi
 if [ -n "$WEIGHT_DECAY" ]; then
     CONFIGS="$CONFIGS --weight-decay $WEIGHT_DECAY"
 fi
+if [ -n "$MOMENTUM" ]; then
+    CONFIGS="$CONFIGS --momentum $MOMENTUM"
+fi
+
+if [ -n "$SEED" ]; then
+    CONFIGS="$CONFIGS --seed $SEED"
+fi
+if [ -n "$TEST_VERSION" ]; then
+    CONFIGS="$CONFIGS --test-version $TEST_VERSION"
+fi 
 
 print_verbose [EXEC] $THIS_DIR/create_configs.py $CONFIGS --export
 test_dir=$(dry_run $THIS_DIR/create_configs.py $CONFIGS --export)

@@ -21,6 +21,7 @@ parser.add_argument('--batch', '--batch-size', dest='batch_size', type=int, defa
 parser.add_argument('--lr', dest='lr', type=float, default=1e-3)
 parser.add_argument('--optimizer', dest='optimizer', type=str, default='Adam')
 parser.add_argument('--weight-decay', dest='weight_decay', type=float, default=1e-4)
+parser.add_argument('--momentum', dest='momentum', type=float, default=0.9)
 parser.add_argument('--export', action='store_true',dest='export')
 
 args = parser.parse_args()
@@ -28,12 +29,13 @@ args = parser.parse_args()
 import pandas as pd
 import numpy as np
 import torch
+import torchmetrics
 
 from kan_utils.config import find_class_name, get_default_model_config, get_default_training_config, save_config
 from kan_utils.metrics import MixedLoss
 from kan_utils.models import RNNFFT, OptimisedRNNFFT
 from kan_utils.utils import expand_value
-from kan_utils.config import find_class_from_name
+from kan_utils.config import find_object_from_name
 from prepare_dataset import build_datset, expand_df_labels
 
 model_config = get_default_model_config()
@@ -66,7 +68,7 @@ for layer, radix, _nfeatures, _nfeatures_next in zip(args.layers, args.radix, nu
     model_config['model_args'].extend([
         {
             # '' : RNNFFT,
-            '' : find_class_from_name(args.fft),
+            '' : find_object_from_name(args.fft),
             '_kwargs' : {
                 'input_size' : _nfeatures,
                 'radix': radix,
@@ -110,12 +112,31 @@ train_config['optimizer'] = getattr(torch.optim, args.optimizer)
 train_config['optimizer_kwargs'] = {
     'weight_decay' : args.weight_decay,
     **({
-        'momentum' : 0.9
+        'momentum' : args.momentum
     } if args.optimizer in ('SGD', 'RMSprop') else {})
 }
 train_config['lr'] = args.lr
 train_config['seed'] = args.seed
 train_config['batch_size'] = args.batch_size
+
+train_config['eval_criteria'].update({
+    'loss' : MixedLoss,
+    'loss_kwargs' : {
+        'output_cols'    : df.columns.tolist(),
+        'categories'     : categories,
+        'categoriesLoss' : torch.nn.BCEWithLogitsLoss,
+        'regressionLoss' : torch.nn.HuberLoss, # TestLoss,
+        'reduction'      : 'sum'
+    },
+    'Accuracy' : MixedLoss,
+    'Accuracy_kwargs' : {
+        'output_cols'    : df.columns.tolist(),
+        'categories'     : categories,
+        'categoriesLoss' : torchmetrics.classification.MulticlassAccuracy,
+        'regressionLoss' : torchmetrics.R2Score, # TestLoss,
+        'reduction'      : 'none'
+    },
+})
 
 def build_test_dir(train_config, fft, num_features, top_dir = None, test_version = None):
     pdir = os.path.join(

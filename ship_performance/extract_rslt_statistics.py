@@ -106,8 +106,10 @@ plt.legend(['training','validation'])
 plt.xlabel('Epochs')
 plt.ylabel('Loss')
 
-plt.savefig(os.path.join(plots_path, 'tr_vs_val.png'))
+save_path = os.path.join(plots_path, 'tr_vs_val.png')
+plt.savefig(save_path)
 plt.close('all')
+print(f"Training vs Validation diagram saved to: {save_path}")
 
 # Read ground truth and predictied values
 rslt_path = os.path.join(args.test_dir,'rslt')

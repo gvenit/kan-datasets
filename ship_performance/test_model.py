@@ -97,6 +97,10 @@ model_config = load_config(args.model_config)
 
 # Instantiate models
 model = instantiate(model_config,'model')
+# model = torch.nn.Sequential(
+#     torch.nn.Dropout(inplace=True),
+#     model
+# )
 # print('-- Model :', model)
 
 # Load model state dict
@@ -105,9 +109,12 @@ model = load_model(model, fname)
 
 # Instantiate evaluation criteria
 eval_criteria = {
-    'Loss' : instantiate(train_config,'criterion'),
     **weak_instantiate_all(train_config['eval_criteria'])
 }
+if 'loss' not in eval_criteria.keys():
+    eval_criteria.update({
+        'loss' : instantiate(train_config,'criterion'),
+    })
 print('-- Evaluation Criteria :')
 if len(eval_criteria):
     for key, val in eval_criteria.items():

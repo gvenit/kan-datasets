@@ -1,3 +1,4 @@
+#!/usr/bin/env python3   
 from typing import Literal
 import sys, os
 
@@ -83,19 +84,22 @@ def expand_df_labels(
     return df[df.columns.sort_values()]  
 
 def build_datset(force = False):
-    dataset_path = os.path.join(__dataset_dir,'Ship_Performance_Dataset.csv')
-    if force or not os.path.exists(dataset_path):
+    dataset_path = os.path.join(__dataset_dir,'{name}.csv')
+    if force or not np.array([
+        os.path.exists(dataset_path.format(name=name)) 
+            for name in ('fulfilment_center_info','meal_info','sample_submission','test','train')
+    ]).all():
         os.environ['KAGGLE_CONFIG_DIR'] = TOP_DIR
         import kagglehub
         import kaggle as kg
         
         kagglehub.whoami()
-        kg.api.dataset_download_files("jeleeladekunlefijabi/ship-performance-clustering-dataset", path=__dataset_dir, unzip=True, force=force)
+        kg.api.dataset_download_files("kannanaikkal/food-demand-forecasting", path=__dataset_dir, unzip=True, force=force)
         
     return get_dataset()
 
 def get_dataset():
-    dataset_path = os.path.join(__dataset_dir,'Ship_Performance_Dataset.csv')
+    dataset_path = os.path.join(__dataset_dir,'{name}.csv')
     df = pd.read_csv(dataset_path)
     for col in df.dtypes[df.dtypes == 'object'].index:
         if col == 'Date':
@@ -147,25 +151,14 @@ def normalize_dataset(
         with open(label_path, 'w') as fw:
             json.dump(label_dict, fw, indent=2)
     
-    # if reverse :
-    #     df[great_values] = 10 ** (df[great_values].values + 5)
-    #     df[big_values]  *= stats.loc[big_values, 'max']
-    #     df[mid_values]  *= 100
-    #     df[low_values]  *= 10
-    # else :
-    #     df[great_values] = np.log10(df[great_values].values) - 5
-    #     df[big_values]  /= stats.loc[big_values, 'max']
-    #     df[mid_values]  /= 100
-    #     df[low_values]  /= 10
-    
     if reverse :
-        df[great_values] = (df[great_values].values +0.5) * (10 ** np.ceil(np.log10(stats.loc[great_values, 'max'].values)))[None,:]
-        df[big_values]   = (df[big_values].values   +0.5) * (10 ** np.ceil(np.log10(stats.loc[big_values,   'max'].values)))[None,:]
+        df[great_values] = 10 ** (df[great_values].values + 5)
+        df[big_values]  *= stats.loc[big_values, 'max']
         df[mid_values]  *= 100
         df[low_values]  *= 10
     else :
-        df[great_values] = df[great_values].values / (10 ** np.ceil(np.log10(stats.loc[great_values, 'max'].values)))[None,:] - 0.5
-        df[big_values]   = df[big_values].values   / (10 ** np.ceil(np.log10(stats.loc[big_values,   'max'].values)))[None,:] - 0.5
+        df[great_values] = np.log10(df[great_values].values) - 5
+        df[big_values]  /= stats.loc[big_values, 'max']
         df[mid_values]  /= 100
         df[low_values]  /= 10
     
@@ -174,6 +167,8 @@ def normalize_dataset(
 if __name__ == '__main__':
     # Download latest version
     df = build_datset()
+    print('FIX THIS')
+    exit()
 
     label_dict = create_labels(df, force=True)
         

@@ -10,7 +10,8 @@ class MixedLoss(torch.nn.Module):
         output_cols : list, 
         categories : list[list[str]], 
         categoriesLoss = torch.nn.BCEWithLogitsLoss(), 
-        regressionLoss = torch.nn.MSELoss()
+        regressionLoss = torch.nn.MSELoss(),
+        reduction : Literal['sum','mean','random','none'] = 'sum'
     ):
         '''
         Parameters
@@ -44,14 +45,28 @@ class MixedLoss(torch.nn.Module):
                 for label in output_cols 
                 if label not in self.regressionCols
         ]
+        self.reduction = reduction
+        if self.reduction not in ('sum','mean','random','none'):
+            raise ValueError(f'Unrecognised reduction type; got {self.reduction}')
         
     def forward(self, pred : torch.Tensor, targ : torch.Tensor):
-        return  torch.stack([
+        loss = torch.stack([
             self.regressionLoss(pred[:,self.regressionCols], targ[:,self.regressionCols]),
             *[
                 self.categoriesLoss(pred[:,group_i], targ[:,group_i])
                     for group_i in self.categoriesCols
-        ]]).sum()
+        ]])
+        
+        if self.reduction == 'sum':
+            return loss.sum()
+        elif self.reduction == 'mean':
+            return loss.mean()
+        elif self.reduction == 'random':
+            return loss[int( torch.rand((1,)) * len(loss))]
+        elif self.reduction == 'none':
+            return loss
+        else :
+            raise ValueError(f'Unrecognised reduction type; got {self.reduction}')
         
 class TestLoss(torch.nn.Module):
     def __init__(self, basis = torch.nn.HuberLoss, epsilon = .1, reduction : Literal['none','sum','mean'] = 'mean'):

@@ -1,10 +1,58 @@
-from typing import Union, Callable
+from typing import Union, Callable, Literal, Any
 import torch
 from torch.nn import Module
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 import pandas as pd
 import os
+
+def get_callable_basis() :
+    '''Basis for callable categories of callable functions.
+    All callables should be of form:
+    
+        def callable(arg1, ..., argN, **kwargs):
+            ...
+
+    
+    Available callback stages
+    -------------------------
+        epoch_start: 
+            At the start of an epoch (before training).
+        train_iter_start: 
+            At the start of an iteration (during training).
+        train_iter_end: 
+            At the end of an iteration (during training).
+        train_end: 
+            At the end of the training in an epoch (after training).
+        eval_start: 
+            At the start of an evaluation (before validation).
+        eval_iter_start: 
+            At the start of an iteration (during validation).
+        eval_iter_end: 
+            At the end of an iteration (during validation).
+        eval_metrics_start: 
+            At the end of model prediction, before calculating metrics (during validation)
+        eval_end: 
+            At the end of an evaluation (after validation).
+        epoch_end: 
+            At the end of an epoch (after scheduler).
+            
+    Returns
+    -------
+        dict[str, (...) -> None]
+    '''
+    return {
+        'epoch_start'           : [],
+        'train_iter_start'      : [],
+        'train_iter_end'        : [],
+        'train_end'             : [],
+        'eval_start'            : [],
+        'eval_iter_start'       : [],
+        'eval_iter_end'         : [],
+        'eval_metrics_start'    : [],
+        'eval_end'              : [],
+        'epoch_end'             : [],
+    }
 
 def evaluate(
     model : Module,
@@ -15,6 +63,8 @@ def evaluate(
     epoch = None,
     show_pbar = True,
     device = torch.device('cpu'),
+    callbacks = get_callable_basis(),
+    callbacks_arguments : dict[str, Any] = {},
 ) -> dict[str, Union[float,list[float]]]:
     if len(criteria) == 0:
         return {}
@@ -33,6 +83,16 @@ def evaluate(
         pbar = eval_dataloader
 
     with torch.no_grad():    
+        loc_kwargs = {
+            'model'            : model,
+            'epoch'            : epoch, 
+            'eval_dataloader'  : eval_dataloader, 
+            'device'           : device,
+        }
+        loc_kwargs.update(callbacks_arguments)
+        for callback in callbacks['eval_start']:
+            callback(**loc_kwargs)
+            
         for data in pbar:
             if len(data) == 3:
                 data, target, key = data[0].to(device), data[1].to(device), data[2]
@@ -41,9 +101,35 @@ def evaluate(
                     key = key.tolist()
             else :
                 data, target, key = data[0].to(device), data[1].to(device), None
-            
+               
+            loc_kwargs = {
+                'model'         : model,
+                'epoch'         : epoch, 
+                'data'          : data,
+                'target'        : target,
+                'key'           : key,
+                'dataloader'    : eval_dataloader, 
+                'device'        : device,
+            }
+            loc_kwargs.update(callbacks_arguments)
+            for callback in callbacks['eval_iter_start']:
+                callback(**loc_kwargs)
+                
             prediction = model(data)
             
+            loc_kwargs = {
+                'model'         : model,
+                'epoch'         : epoch, 
+                'prediction'    : prediction,
+                'target'        : target,
+                'key'           : key,
+                'dataloader'    : eval_dataloader, 
+                'device'        : device,
+            }
+            loc_kwargs.update(callbacks_arguments)
+            for callback in callbacks['eval_iter_start']:
+                callback(**loc_kwargs)
+                
             preds.append(prediction.cpu())
             targs.append(target.cpu())
             if key is not None:
@@ -59,12 +145,31 @@ def evaluate(
         except:
             prediction = prediction.cpu()
             target = target.cpu()
-            
+                
         if show_pbar:
             pbar.close()
             
+        loc_kwargs = {
+            'eval_criteria' : criteria,
+            'epoch'         : epoch, 
+            'prediction'    : prediction,
+            'target'        : target,
+            'key'           : keys,
+            'dataloader'    : eval_dataloader, 
+            'device'        : device,
+        }
+        loc_kwargs.update(callbacks_arguments)
+        for callback in callbacks['eval_metrics_start']:
+            callback(**loc_kwargs)
+            
+        for criterion in criteria.values():
+            try :
+                criterion.to(device)
+            except :
+                pass
+            
         metrics = {
-            name : float(criterion(prediction, target).cpu())
+            name : criterion(prediction, target).double().cpu().tolist()
                 for name, criterion in criteria.items()
         }
         
@@ -91,5 +196,18 @@ def evaluate(
         
         print(f'Results written to "{rslt_path}"')
         del df
+        
+    loc_kwargs = {
+        'metrics'          : metrics,
+        'epoch'            : epoch, 
+        'prediction'       : prediction,
+        'target'           : target,
+        'key'              : key,
+        'eval_dataloader'  : eval_dataloader, 
+        'device'           : device,
+    }
+    loc_kwargs.update(callbacks_arguments)
+    for callback in callbacks['eval_end']:
+        callback(**loc_kwargs)
         
     return metrics

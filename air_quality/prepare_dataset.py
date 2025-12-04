@@ -1,3 +1,4 @@
+#!/usr/bin/env python3   
 from typing import Literal
 import sys, os
 
@@ -36,73 +37,45 @@ def create_labels(
         label_dict = json.load(fr)
         
     return label_dict
-    
-def set_df_labels(
-    df: pd.DataFrame, 
-    label_dict :dict = None,
-    ):
-    if label_dict is None:
-        label_dict = create_labels(df)
-        
-    for col, labels in label_dict.items():
-        df[col] = df[col].apply(
-            lambda row : labels[row if isinstance(row, str) else 'Unknown']
-        )
-    if 'Date' in df.columns:
-        df['Date'] = pd.to_datetime(df['Date'])
-        df['Date'] = df['Date'].apply(
-            lambda row : row.day_of_year
-        )
-    return df[df.columns.sort_values()]
-
-def expand_df_labels(
-    df: pd.DataFrame, 
-    label_dict :dict = None,
-    ):
-    if label_dict is None:
-        label_dict = create_labels(df)
-        
-    for col, labels in label_dict.items():
-        for label in labels.keys():
-            if label != 'NaN' :
-                df[f'{col}_Is_{label}'] = df[col].apply(
-                    lambda row : int(row == label)
-                )
-            else :
-                df[f'{col}_Is_Unknown'] = df[col].apply(
-                    lambda row : str(row).lower() == 'nan'
-                )
-            
-        df.drop(labels=col, axis=1, inplace=True)
-        
-    if 'Date' in df.columns:
-        df['Date'] = pd.to_datetime(df['Date'])
-        df['Date'] = df['Date'].apply(
-            lambda row : row.day_of_year
-        )
-    return df[df.columns.sort_values()]  
 
 def build_datset(force = False):
-    dataset_path = os.path.join(__dataset_dir,'Ship_Performance_Dataset.csv')
-    if force or not os.path.exists(dataset_path):
+    dataset_path = os.path.join(__dataset_dir,'{city}_data.csv')
+    if force or not np.array([os.path.exists(dataset_path.format(city=city)) for city in ('ancona','athens','zaragoza')]).all():
         os.environ['KAGGLE_CONFIG_DIR'] = TOP_DIR
         import kagglehub
         import kaggle as kg
         
         kagglehub.whoami()
-        kg.api.dataset_download_files("jeleeladekunlefijabi/ship-performance-clustering-dataset", path=__dataset_dir, unzip=True, force=force)
+        kg.api.dataset_download_files("yekenot/air-quality-monitoring-in-european-cities", path=__dataset_dir, unzip=True, force=force)
         
     return get_dataset()
 
 def get_dataset():
-    dataset_path = os.path.join(__dataset_dir,'Ship_Performance_Dataset.csv')
-    df = pd.read_csv(dataset_path)
-    for col in df.dtypes[df.dtypes == 'object'].index:
-        if col == 'Date':
-            continue
-        idx = df[col].isna()
-        df.loc[idx, [col]] = 'Unknown'
-    return df
+    ...
+    dataset_path = os.path.join(__dataset_dir,'{city}_data.csv')
+    df = pd.concat([
+        pd.read_csv(dataset_path.format(city=city))
+            for city in ('ancona','athens')
+    ]).drop(columns=["station_name","code","id"])
+    df_test = pd.read_csv(dataset_path.format(city='zaragoza')).drop(columns=["station_name"])
+    
+    if 'Date' in df.columns:
+        df['Date'] = pd.to_datetime(df['Date'])
+        df['Hour'] = df['Date'].apply(
+            lambda row : row.hour
+        )
+        df['Date'] = df['Date'].apply(
+            lambda row : row.day_of_year
+        )
+    if 'Date' in df_test.columns:
+        df_test['Date'] = pd.to_datetime(df_test['Date'])
+        df_test['Hour'] = df_test['Date'].apply(
+            lambda row : row.hour
+        )
+        df_test['Date'] = df_test['Date'].apply(
+            lambda row : row.day_of_year
+        )
+    return df, df_test
 
 def normalize_dataset(
     df : pd.DataFrame,
@@ -147,25 +120,14 @@ def normalize_dataset(
         with open(label_path, 'w') as fw:
             json.dump(label_dict, fw, indent=2)
     
-    # if reverse :
-    #     df[great_values] = 10 ** (df[great_values].values + 5)
-    #     df[big_values]  *= stats.loc[big_values, 'max']
-    #     df[mid_values]  *= 100
-    #     df[low_values]  *= 10
-    # else :
-    #     df[great_values] = np.log10(df[great_values].values) - 5
-    #     df[big_values]  /= stats.loc[big_values, 'max']
-    #     df[mid_values]  /= 100
-    #     df[low_values]  /= 10
-    
     if reverse :
-        df[great_values] = (df[great_values].values +0.5) * (10 ** np.ceil(np.log10(stats.loc[great_values, 'max'].values)))[None,:]
-        df[big_values]   = (df[big_values].values   +0.5) * (10 ** np.ceil(np.log10(stats.loc[big_values,   'max'].values)))[None,:]
+        df[great_values] = 10 ** (df[great_values].values + 5)
+        df[big_values]  *= stats.loc[big_values, 'max']
         df[mid_values]  *= 100
         df[low_values]  *= 10
     else :
-        df[great_values] = df[great_values].values / (10 ** np.ceil(np.log10(stats.loc[great_values, 'max'].values)))[None,:] - 0.5
-        df[big_values]   = df[big_values].values   / (10 ** np.ceil(np.log10(stats.loc[big_values,   'max'].values)))[None,:] - 0.5
+        df[great_values] = np.log10(df[great_values].values) - 5
+        df[big_values]  /= stats.loc[big_values, 'max']
         df[mid_values]  /= 100
         df[low_values]  /= 10
     
@@ -173,7 +135,7 @@ def normalize_dataset(
 
 if __name__ == '__main__':
     # Download latest version
-    df = build_datset()
+    df, df_test = build_datset()
 
     label_dict = create_labels(df, force=True)
         
@@ -182,11 +144,19 @@ if __name__ == '__main__':
         for key, _val in val.items():
             print('  ', _val, key)
             
-    df_set = set_df_labels(df.copy(),label_dict)
-    print('Set df labels')
-    print(df_set)
+    print(df.columns)
+            
     print(df)
+    print(df_test)
     
+    print('Common columns:', ', '.join(set([*df.columns, *df_test.columns])))
+    print('Unique columns (train):', ', '.join(df.columns[np.isin(df.columns,df_test.columns, invert=True)]))
+    print('Unique columns (test):', ', '.join(df_test.columns[np.isin(df_test.columns,df.columns, invert=True)]))
+    
+    print('Columns with NaN values:', ', '.join(df.columns[[df[col].isna().any() for col in df.columns]]))
+    
+    print('FIX THIS')
+    exit()
     for col in label_dict.keys():
         print(col, np.unique_counts(df[col].apply(str)))
     

@@ -79,6 +79,7 @@ from kan_utils.dataset import DataFrameToDataset, split_dataset
 from kan_utils.config import *
 from kan_utils.training import train
 from prepare_dataset import build_datset, expand_df_labels, normalize_dataset
+import custom_callbacks
 
 device = torch.device(
     # 'cpu'
@@ -86,11 +87,15 @@ device = torch.device(
 )
 
 # Check configuration file validity
-train_config = load_config(args.train_config)
+train_config = load_config(args.train_config, locals={**custom_callbacks.__dict__})
 model_config = load_config(args.model_config)
 
 # Instantiate models
 model = instantiate(model_config,'model')
+model = torch.nn.Sequential(
+    torch.nn.Dropout(5 / len(model_config['output']), inplace=True),
+    model
+)
 print('-- Model :', model)
 model.to(device)
 
@@ -114,6 +119,10 @@ if len(eval_criteria):
         print('  --', key, ':', val)
 else :
     print('  No evaluation criteria.')
+    
+# Instantiate callbacks
+callbacks = weak_instantiate_all(train_config['callbacks'])
+callbacks_arguments = weak_instantiate_all(train_config['callbacks_arguments'])
 
 train_loader, val_loader, *_ = split_dataset(
     splits          = train_config['splits'],
@@ -160,4 +169,5 @@ history = train(
     device            = device,
     evaluate_training = False,
     show_pbar         = 'external',
+    callbacks         = callbacks,
 )

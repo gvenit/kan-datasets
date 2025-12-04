@@ -2,14 +2,19 @@ from typing import Iterable
 import os
 import json
 import torch
+import torchmetrics
 import copy
 from .. import metrics
 from .. import models
+from ..training import get_callable_basis
 
 __cls_dict = {
     **torch.nn.__dict__,
     **torch.optim.__dict__,
     **torch.optim.lr_scheduler.__dict__,
+    **torchmetrics.__dict__,
+    **torchmetrics.classification.__dict__,
+    **torchmetrics.regression.__dict__,
     **metrics.__dict__,
     **models.__dict__,
 }
@@ -50,8 +55,31 @@ def get_default_training_config() -> dict:
             'MSELoss'           : torch.nn.MSELoss,
             'MSELoss_args'      : {},
         },
-        'pretrained'            : False
+        'pretrained'            : False,
+        'callbacks'             : get_callable_basis(),
+        'callbacks_arguments'   : {},
     }
+
+def object_to_config(
+    obj, 
+    *args, 
+    target_name = None, 
+    **kwargs):
+    if target_name is None:
+        target_name = ''
+    
+    targ_dict = {
+        target_name             : obj,
+    }
+    if len(args):
+        targ_dict.update({
+            f'{target_name}_args'   : list(args),
+        })
+    if len(kwargs):
+        targ_dict.update({
+            f'{target_name}_kwargs' : kwargs,
+        })
+    return targ_dict
 
 def parse_config_val(val):
     '''Parse values from a configuration dictionary to a json compatible dictionary.
@@ -77,7 +105,7 @@ def parse_config(config):
         config[key] = parse_config_val(val)
     return config
 
-def find_class_from_name(val, locals=None):
+def find_object_from_name(val, locals=None):
     local_dict = __cls_dict
     if isinstance(locals,dict):
         local_dict.update(**locals)
@@ -97,7 +125,7 @@ def find_class_name(val, locals=None):
     else :
         raise ValueError(f'Class type not found; got type {cls}')
 
-def find_class(cls_repr, locals=None):
+def find_object(cls_repr, locals=None):
     local_dict = __cls_dict
     if isinstance(locals, dict):
         local_dict.update(**locals)
@@ -116,8 +144,8 @@ def parse_json_val(val, locals=None):
     elif isinstance(val, str):
         if   val.isnumeric() or val.lower() in ['true','false']:
             return eval(val)
-        elif val.startswith('<class '):
-            return find_class(val, locals)
+        elif val.startswith(('<class ', '<function ')):
+            return find_object(val, locals)
         try :
             return float(val)
         except :
@@ -170,7 +198,7 @@ def load_config(path, locals : dict[str, object]=None) -> dict:
         
     return parse_json(config, locals)
 
-def weak_instantiate_all(config : dict[str,object] | Iterable | object):
+def weak_instantiate_all(config : dict[str,object] | Iterable | object) -> dict[str,object] | Iterable | object:
     # print('weak_instantiate_all --', config)
     if isinstance(config, dict):
         if len(config) <= 3 and '' in config.keys():
@@ -201,7 +229,7 @@ def instantiate(config, key, *args, locals = None, **kwargs):
     if not isinstance(type(config[key]), type):
         raise TypeError(f'Unexpected object for key "{key}"; expected "{type}"; got "{config[key]}"')
     
-    # this_type = find_class(config[key], locals)
+    # this_type = find_object(config[key], locals)
     
     # print(f"config[f'{key}'_args]", config[f'{key}_args'])
     if f'{key}_args' in config.keys() :
