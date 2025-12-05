@@ -4,14 +4,14 @@
 # Configuration arguments
 # -- Leave empty for default values
 ########################################
-TEST_VERSION=HuberLoss-linearly_normalized # TestLoss
+TEST_VERSION=HuberLoss      # TestLoss  -linearly_normalized
 SEED=42
 
-LAYERS="256 256 256"
+LAYERS="256 256"
 NUM_GRIDS="4"               #  4
 GRID_MIN=-1.25              # -1.2
 GRID_MAX=0.25               #  0.25
-SCALE=1.5                   #  2
+SCALE=2                     #  2
 
 EPOCHS=10000
 BATCH=128
@@ -19,7 +19,7 @@ LR=1e-3
 OPTIMIZER="RMSprop"         # Adam
 WEIGHT_DECAY=5e-4           # 1e-4
 MOMENTUM=                   # 0.9
-MODE='RSWAFF'
+MODE='RSWAFF'                # 'RSWAFF'
 RESIDUAL=                   # 0 / 1
 
 ########################################

@@ -127,7 +127,7 @@ def evaluate(
                 'device'        : device,
             }
             loc_kwargs.update(callbacks_arguments)
-            for callback in callbacks['eval_iter_start']:
+            for callback in callbacks['eval_iter_end']:
                 callback(**loc_kwargs)
                 
             preds.append(prediction.cpu())

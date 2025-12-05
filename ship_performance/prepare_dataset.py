@@ -147,27 +147,27 @@ def normalize_dataset(
         with open(label_path, 'w') as fw:
             json.dump(label_dict, fw, indent=2)
     
-    # if reverse :
-    #     df[great_values] = 10 ** (df[great_values].values + 5)
-    #     df[big_values]  *= stats.loc[big_values, 'max']
-    #     df[mid_values]  *= 100
-    #     df[low_values]  *= 10
-    # else :
-    #     df[great_values] = np.log10(df[great_values].values) - 5
-    #     df[big_values]  /= stats.loc[big_values, 'max']
-    #     df[mid_values]  /= 100
-    #     df[low_values]  /= 10
-    
     if reverse :
-        df[great_values] = (df[great_values].values +0.5) * (10 ** np.ceil(np.log10(stats.loc[great_values, 'max'].values)))[None,:]
-        df[big_values]   = (df[big_values].values   +0.5) * (10 ** np.ceil(np.log10(stats.loc[big_values,   'max'].values)))[None,:]
+        df[great_values] = 10 ** (df[great_values].values + 5)
+        df[big_values]  *= stats.loc[big_values, 'max']
         df[mid_values]  *= 100
         df[low_values]  *= 10
     else :
-        df[great_values] = df[great_values].values / (10 ** np.ceil(np.log10(stats.loc[great_values, 'max'].values)))[None,:] - 0.5
-        df[big_values]   = df[big_values].values   / (10 ** np.ceil(np.log10(stats.loc[big_values,   'max'].values)))[None,:] - 0.5
+        df[great_values] = np.log10(df[great_values].values) - 5
+        df[big_values]  /= stats.loc[big_values, 'max']
         df[mid_values]  /= 100
         df[low_values]  /= 10
+    
+    # if reverse :
+    #     df[great_values] = (df[great_values].values +0.5) * (10 ** np.ceil(np.log10(stats.loc[great_values, 'max'].values)))[None,:]
+    #     df[big_values]   = (df[big_values].values   +0.5) * (10 ** np.ceil(np.log10(stats.loc[big_values,   'max'].values)))[None,:]
+    #     df[mid_values]  *= 100
+    #     df[low_values]  *= 10
+    # else :
+    #     df[great_values] = df[great_values].values / (10 ** np.ceil(np.log10(stats.loc[great_values, 'max'].values)))[None,:] - 0.5
+    #     df[big_values]   = df[big_values].values   / (10 ** np.ceil(np.log10(stats.loc[big_values,   'max'].values)))[None,:] - 0.5
+    #     df[mid_values]  /= 100
+    #     df[low_values]  /= 10
     
     return df
 

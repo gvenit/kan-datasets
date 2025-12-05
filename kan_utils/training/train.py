@@ -198,7 +198,7 @@ def train(
                 val_metrics = evaluate(
                     model, 
                     eval_dataloader = eval_dataloader, 
-                    eval_criteria   = eval_criteria, 
+                    criteria        = eval_criteria, 
                     device          = device, 
                     show_pbar       = False,
                     callbacks       = callbacks,

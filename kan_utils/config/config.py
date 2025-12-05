@@ -59,7 +59,6 @@ def get_default_training_config() -> dict:
         'callbacks'             : get_callable_basis(),
         'callbacks_arguments'   : {},
     }
-
 def object_to_config(
     obj, 
     *args, 
@@ -199,7 +198,7 @@ def load_config(path, locals : dict[str, object]=None) -> dict:
     return parse_json(config, locals)
 
 def weak_instantiate_all(config : dict[str,object] | Iterable | object) -> dict[str,object] | Iterable | object:
-    # print('weak_instantiate_all --', config)
+    # print('weak_instantiate_all --', type(config))
     if isinstance(config, dict):
         if len(config) <= 3 and '' in config.keys():
             return weak_instantiate(config, '')
@@ -210,7 +209,7 @@ def weak_instantiate_all(config : dict[str,object] | Iterable | object) -> dict[
                     for key in config.keys()
                         if not (key.endswith('_args') or key.endswith('_kwargs'))
             }
-    elif isinstance(config, str):
+    elif isinstance(config, (str, )):
         return config
     elif hasattr(config,'__iter__'):
         # print('weak_instantiate_all --', config)
@@ -220,12 +219,15 @@ def weak_instantiate_all(config : dict[str,object] | Iterable | object) -> dict[
         return weak_instantiate({'' : config}, '')
     
 def weak_instantiate(config, key):
+    # print('weak_instantiate --', key, '--', config.keys())
     if isinstance(config[key], type):
         return instantiate(config,key)
+    elif hasattr(config[key],'__iter__'):
+        return weak_instantiate_all(config[key])
     else :
         return config[key]
 
-def instantiate(config, key, *args, locals = None, **kwargs):
+def instantiate(config, key, *args, **kwargs):
     if not isinstance(type(config[key]), type):
         raise TypeError(f'Unexpected object for key "{key}"; expected "{type}"; got "{config[key]}"')
     

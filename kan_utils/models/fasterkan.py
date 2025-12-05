@@ -265,7 +265,8 @@ class FasterKANLayer(nn.Module):
 
         self.rbf = RSFAuto(train_grid, train_inv_denominator,grid_min, grid_max, num_grids, inv_denominator, mode=mode)
         self.linear = nn.Linear(input_dim * num_grids, output_dim, bias=USE_BIAS_ON_LINEAR) 
-        self.drop = nn.Dropout(1-0.9**(num_grids)) # NOTE: Dropout rate increases with num_grids
+        self.drop = nn.Dropout(0.5) # NOTE: Dropout rate increases with num_grids
+        # self.drop = nn.Dropout(1-0.9**(num_grids)) # NOTE: Dropout rate increases with num_grids
 
     def forward(self, x):
         """

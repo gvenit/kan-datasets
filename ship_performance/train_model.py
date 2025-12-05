@@ -92,10 +92,6 @@ model_config = load_config(args.model_config)
 
 # Instantiate models
 model = instantiate(model_config,'model')
-model = torch.nn.Sequential(
-    torch.nn.Dropout(5 / len(model_config['output']), inplace=True),
-    model
-)
 print('-- Model :', model)
 model.to(device)
 

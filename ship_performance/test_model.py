@@ -84,6 +84,7 @@ from kan_utils.config import *
 from kan_utils.training import evaluate
 from prepare_dataset import build_datset, expand_df_labels, normalize_dataset
 from extract_statistics import extract_statistics
+import custom_callbacks
 
 
 device = torch.device(
@@ -92,16 +93,11 @@ device = torch.device(
 )
 
 # Check configuration file validity
-train_config = load_config(args.train_config)
+train_config = load_config(args.train_config, locals={**custom_callbacks.__dict__})
 model_config = load_config(args.model_config)
 
 # Instantiate models
 model = instantiate(model_config,'model')
-# model = torch.nn.Sequential(
-#     torch.nn.Dropout(inplace=True),
-#     model
-# )
-# print('-- Model :', model)
 
 # Load model state dict
 fname = os.path.join(args.test_dir, 'models', 'best')

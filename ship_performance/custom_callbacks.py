@@ -62,10 +62,10 @@ class MaskInput :
         
         mask = torch.rand(len(self.input_regression_type) + len(self.input_categories), device = device) < float(probability)
         
-        mask_extended = torch.empty(len(self.input), device = device)
+        mask_extended = torch.empty(len(self.input), device = device, dtype = mask.dtype)
         mask_extended[self.input_regression_type] = mask[:len(self.input_regression_type)]
         
         for offset, category in enumerate(self.input_categories):
             mask_extended[category] = mask[len(self.input_regression_type) + offset]
         
-        data.masked_fill_(mask_extended, self.masked_value.to(device))
+        data.masked_fill_(mask_extended, self.masked_value.to(data.dtype).to(device))

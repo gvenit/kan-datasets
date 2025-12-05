@@ -63,19 +63,6 @@ model_config.update(
         residual          = args.residual,
     )
 )
-# model_config['model_kwargs'] = {
-#     'layers_hidden' : [
-#         len(model_config['input']),
-#         *([] if args.hidden_layers is None else args.hidden_layers),
-#         len(model_config['output']),
-#     ],
-#     'num_grids'         : args.num_grids,
-#     'grid_min'          : args.grid_min,
-#     'grid_max'          : args.grid_max,
-#     'inv_denominator'   : args.scale,
-#     'mode'              : args.mode,
-#     'residual'          : args.residual,
-# }
 categories = pd.unique(pd.Series(df.columns).apply(lambda row: row[:row.find('_Is_')]))
 categories = [[
     label for label in df.columns
@@ -86,15 +73,6 @@ categories = [[
 categories = [_ for _ in categories if len(_)]
 
 train_config = get_default_training_config()
-# train_config['criterion'] =  MixedLoss
-# train_config['criterion_kwargs'] = {
-#     'output_cols' : df.columns.tolist(),
-#     'categories'  : categories,
-#     'categoriesLoss' : torch.nn.BCEWithLogitsLoss,
-#     'regressionLoss' : torch.nn.HuberLoss, # TestLoss,
-#     'reduction'      : 'random'
-# }
-# train_config['criterion'] =  SelfNormaizingHuberLoss 
 model_config.update(
     object_to_config(
         MixedLoss,
@@ -107,13 +85,6 @@ model_config.update(
 ))
 train_config['patience'] = args.patience
 train_config['epochs'] = args.epochs
-# train_config['optimizer'] = getattr(torch.optim, args.optimizer)
-# train_config['optimizer_kwargs'] = {
-#     'weight_decay' : args.weight_decay,
-#     **({
-#         'momentum' : args.momentum
-#     } if args.optimizer in ('SGD', 'RMSprop') else {})
-# }
 train_config.update(
     object_to_config(
         getattr(torch.optim, args.optimizer),
@@ -127,14 +98,6 @@ train_config['lr'] = args.lr
 train_config['seed'] = args.seed
 train_config['batch_size'] = args.batch_size
 train_config['eval_criteria'] = {
-    # 'loss' : MixedLoss,
-    # 'loss_kwargs' : {
-    #     'output_cols'    : df.columns.tolist(),
-    #     'categories'     : categories,
-    #     'categoriesLoss' : torch.nn.BCEWithLogitsLoss,
-    #     'regressionLoss' : torch.nn.HuberLoss, # TestLoss,
-    #     'reduction'      : 'sum'
-    # },
     **object_to_config(
         MixedLoss,
         target_name     = 'loss',
@@ -144,17 +107,6 @@ train_config['eval_criteria'] = {
         regressionLoss  = torch.nn.HuberLoss, # TestLoss,
         reduction       = 'sum',
     ),
-    # 'Accuracy' : MixedLoss,
-    # 'Accuracy_kwargs' : {
-    #     'output_cols'    : df.columns.tolist(),
-    #     'categories'     : categories,
-    #     'categoriesLoss' : OneHotMulticlassAccuracy,
-    #     'categoriesLoss_kwargs' : {
-    #         'average' : 'micro'
-    #     },
-    #     'regressionLoss' : torchmetrics.R2Score, # TestLoss,
-    #     'reduction'      : 'none'
-    # },
     **object_to_config(
         MixedLoss,
         target_name     = 'Accuracy',
@@ -173,8 +125,8 @@ mask = object_to_config(
     MaskInput,
     input = model_config['input'],
     input_categories = categories,
-    max_probability = 0.25,
-    x_shift = 100 / int(train_config['epochs']),
+    max_probability = 0.4,
+    x_shift = 300 / int(train_config['epochs']),
     masked_value = -1,
 )
 train_config['callbacks']['train_iter_start'].append(mask)
