@@ -172,7 +172,7 @@ class ProbabilityAdjuster :
             acc = history['val'][epoch][self.metric_name]
             if isinstance(acc, dict):
                 acc = list(acc.values())
-            out_prob = self._to_prob(torch.tensor().float())
+            out_prob = self._to_prob(torch.tensor(acc).float())
             
             self._output_prob = self._smooth(out_prob, self._output_prob)
             in_prob = self._backprop_prob(out_prob)
