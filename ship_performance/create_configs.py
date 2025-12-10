@@ -38,7 +38,8 @@ import torchmetrics
 from kan_utils.config import *
 from kan_utils.metrics import *
 from prepare_dataset import build_datset, expand_df_labels
-from custom_callbacks import MaskInput
+from extract_statistics import get_corellate
+from custom_callbacks import *
 
 model_config = get_default_model_config()
 
@@ -73,7 +74,7 @@ categories = [[
 categories = [_ for _ in categories if len(_)]
 
 train_config = get_default_training_config()
-model_config.update(
+train_config.update(
     object_to_config(
         MixedLoss,
         target_name     = 'criterion',
@@ -105,7 +106,7 @@ train_config['eval_criteria'] = {
         categories      = categories,
         categoriesLoss  = torch.nn.BCEWithLogitsLoss,
         regressionLoss  = torch.nn.HuberLoss, # TestLoss,
-        reduction       = 'sum',
+        reduction       = 'mean',
     ),
     **object_to_config(
         MixedLoss,
@@ -117,7 +118,11 @@ train_config['eval_criteria'] = {
             target_name = 'categoriesLoss', 
             average = 'micro'
         ),
-        regressionLoss  = torchmetrics.R2Score, # TestLoss,
+        **object_to_config(
+            torchmetrics.R2Score, 
+            target_name = 'regressionLoss', 
+            multioutput = 'raw_values'
+        ),
         reduction       = 'none',
     )
 }
@@ -129,8 +134,23 @@ mask = object_to_config(
     x_shift = 300 / int(train_config['epochs']),
     masked_value = -1,
 )
+train_config['callbacks']['epoch_start'].append(
+    object_to_config(
+        'lambda *args, probability_adjuster=None, criterion=None, **kwargs : criterion.update_probabilities(1-0.5*probability_adjuster.get_output_prob())'
+    )
+)
 train_config['callbacks']['train_iter_start'].append(mask)
 train_config['callbacks']['eval_iter_start'].append(mask)
+train_config['callbacks']['epoch_end'].append(
+    object_to_config(
+        'lambda *args, probability_adjuster=None,**kwargs : probability_adjuster(*args,**kwargs)'
+    )
+)
+train_config['callbacks']['training_finished'].append(
+    object_to_config(
+        'lambda *args, probability_adjuster=None,**kwargs : probability_adjuster.save_logs()'
+    )
+)
 
 def build_test_dir(train_config, model_config, top_dir = None, test_version = None):
     pdir = os.path.join(
@@ -158,7 +178,20 @@ def build_test_dir(train_config, model_config, top_dir = None, test_version = No
 pdir = build_test_dir(train_config, model_config, top_dir=args.dest_top_dir, test_version=args.test_version)
 if not args.export :
     print(f'Test directory : {pdir}')
-    
+  
+train_config['callbacks_arguments'].update( object_to_config(
+    ProbabilityAdjuster,
+    target_name='probability_adjuster',
+    input               = model_config['input'],
+    input_categories    = categories,
+    output              = model_config['output'],
+    output_categories   = categories,
+    confusion_matrix    = get_corellate().to_dict(),
+    smoothing_coef      = 0.1,
+    saving_interval     = 25,
+    log_dir             = pdir,
+))
+  
 path = os.path.join(pdir,'config','train.json')
 save_config(train_config, path)
 if not args.export :

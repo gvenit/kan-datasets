@@ -139,8 +139,8 @@ for category, types in categories.items() :
     pr_slice.columns = [col[col.find('_Is_')+4:] for col in pr_slice.columns]
     
     # Get probabilities with Softmax
-    pr_slice.loc[pr_slice.index].apply(np.exp)
-    pr_slice.loc[pr_slice.index].apply(
+    pr_slice = pr_slice.loc[pr_slice.index].apply(np.exp)
+    pr_slice = pr_slice.loc[pr_slice.index].apply(
         (lambda row : row / row.sum()),
         axis=1
     )
@@ -151,7 +151,7 @@ for category, types in categories.items() :
         axis=1
     )
     pr_type = pr_slice.apply(
-        lambda row: gt_slice.columns[np.argmax(row)-1],
+        lambda row: pr_slice.columns[np.argmax(row)-1],
         axis=1
     )
     cm = confusion_matrix(gt_type.values, pr_type.values, labels=class_names)

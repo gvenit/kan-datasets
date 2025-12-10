@@ -36,6 +36,10 @@ def get_callable_basis() :
             At the end of an evaluation (after validation).
         epoch_end: 
             At the end of an epoch (after scheduler).
+        exception_raised:
+            When an exception is raised. 
+        training_finished:
+            At the end of all training (after all epochs are executed or when the patience counter reaches the maximum value).
             
     Returns
     -------
@@ -52,6 +56,8 @@ def get_callable_basis() :
         'eval_metrics_start'    : [],
         'eval_end'              : [],
         'epoch_end'             : [],
+        'exception_raised'      : [], 
+        'training_finished'     : [],
     }
 
 def evaluate(
@@ -168,10 +174,12 @@ def evaluate(
             except :
                 pass
             
-        metrics = {
-            name : criterion(prediction, target).double().cpu().tolist()
-                for name, criterion in criteria.items()
-        }
+        metrics = {}
+        for name, criterion in criteria.items():
+            try :
+                metrics[name] = criterion(prediction, target).double().cpu().tolist()
+            except :
+                metrics[name] = criterion(prediction, target)
         
     if keep_copy and len(keys) > 0 and checkpoint_path is not None:
         rslt_path = os.path.join(os.path.dirname(checkpoint_path), "rslt.csv" if epoch is None else f"{epoch}.csv")

@@ -8,16 +8,23 @@ from .. import metrics
 from .. import models
 from ..training import get_callable_basis
 
-__cls_dict = {
-    **torch.nn.__dict__,
-    **torch.optim.__dict__,
-    **torch.optim.lr_scheduler.__dict__,
-    **torchmetrics.__dict__,
-    **torchmetrics.classification.__dict__,
-    **torchmetrics.regression.__dict__,
-    **metrics.__dict__,
-    **models.__dict__,
-}
+
+def get_locals(*args):
+    locals_dict = {}
+    for module in args:
+        locals_dict.update(**module.__dict__)
+    return locals_dict
+
+__cls_dict = get_locals(
+    torch.nn,
+    torch.optim,
+    torch.optim.lr_scheduler,
+    torchmetrics,
+    torchmetrics.classification,
+    torchmetrics.regression,
+    metrics,
+    models,
+)
 
 def get_default_model_config() -> dict:
     return {
@@ -59,6 +66,7 @@ def get_default_training_config() -> dict:
         'callbacks'             : get_callable_basis(),
         'callbacks_arguments'   : {},
     }
+
 def object_to_config(
     obj, 
     *args, 
@@ -141,7 +149,7 @@ def parse_json_val(val, locals=None):
     if   isinstance(val, dict):
         return parse_json(val)
     elif isinstance(val, str):
-        if   val.isnumeric() or val.lower() in ['true','false']:
+        if   val.isnumeric() or val.lower() in ['true','false'] or val.startswith('lambda'):
             return eval(val)
         elif val.startswith(('<class ', '<function ')):
             return find_object(val, locals)
@@ -176,7 +184,7 @@ def save_config(config, path) -> None:
 
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, 'w') as fw:
-        json.dump(config, fw, indent=4)
+        json.dump(config, fw, indent=2)
 
 def load_config(path, locals : dict[str, object]=None) -> dict:
     '''Load a configuration dictionary from the specified json file.

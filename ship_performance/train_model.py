@@ -79,6 +79,7 @@ from kan_utils.dataset import DataFrameToDataset, split_dataset
 from kan_utils.config import *
 from kan_utils.training import train
 from prepare_dataset import build_datset, expand_df_labels, normalize_dataset
+import extract_statistics
 import custom_callbacks
 
 device = torch.device(
@@ -87,7 +88,7 @@ device = torch.device(
 )
 
 # Check configuration file validity
-train_config = load_config(args.train_config, locals={**custom_callbacks.__dict__})
+train_config = load_config(args.train_config, locals=get_locals(custom_callbacks, extract_statistics))
 model_config = load_config(args.model_config)
 
 # Instantiate models
@@ -119,6 +120,8 @@ else :
 # Instantiate callbacks
 callbacks = weak_instantiate_all(train_config['callbacks'])
 callbacks_arguments = weak_instantiate_all(train_config['callbacks_arguments'])
+
+# print(callbacks_arguments)
 
 train_loader, val_loader, *_ = split_dataset(
     splits          = train_config['splits'],
@@ -153,17 +156,18 @@ print('  -- Validation :', len(val_loader.dataset))
 
 history = train(
     model,
-    train_dataloader  = train_loader,
-    eval_dataloader   = val_loader,
-    criterion         = criterion,
-    eval_criteria     = eval_criteria,
-    optimizer         = optimizer,
-    scheduler         = scheduler,
-    epochs            = train_config['epochs'],
-    patience          = 100,
-    top_dirname       = args.test_dir,
-    device            = device,
-    evaluate_training = False,
-    show_pbar         = 'external',
-    callbacks         = callbacks,
+    train_dataloader    = train_loader,
+    eval_dataloader     = val_loader,
+    criterion           = criterion,
+    eval_criteria       = eval_criteria,
+    optimizer           = optimizer,
+    scheduler           = scheduler,
+    epochs              = train_config['epochs'],
+    patience            = 100,
+    top_dirname         = args.test_dir,
+    device              = device,
+    evaluate_training   = False,
+    show_pbar           = 'external',
+    callbacks           = callbacks,
+    callbacks_arguments = callbacks_arguments,
 )

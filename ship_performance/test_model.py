@@ -93,7 +93,7 @@ device = torch.device(
 )
 
 # Check configuration file validity
-train_config = load_config(args.train_config, locals={**custom_callbacks.__dict__})
+train_config = load_config(args.train_config, locals=get_locals(custom_callbacks, extract_statistics))
 model_config = load_config(args.model_config)
 
 # Instantiate models

@@ -30,6 +30,7 @@ class MixedLoss(torch.nn.Module):
         
         self.categoriesLoss = categoriesLoss
         self.regressionLoss = regressionLoss
+        self.output_cols = output_cols
         
         self.categoriesCols = [
             [output_cols.index(label) for label in group_i ]
@@ -49,22 +50,50 @@ class MixedLoss(torch.nn.Module):
         if self.reduction not in ('sum','mean','random','none'):
             raise ValueError(f'Unrecognised reduction type; got {self.reduction}')
         
+        self.probabilities = torch.ones(len(self.regressionCols)+len(self.categoriesCols))
+        
+        # print(self.regressionCols, self.categoriesCols)
+        # exit(-1)
+        
+    def update_probabilities(self, prob):
+        self.probabilities = prob 
+        if torch.sum(self.probabilities) == 0:
+            self.probabilities = torch.ones_like(self.probabilities)
+        
     def forward(self, pred : torch.Tensor, targ : torch.Tensor):
-        loss = torch.stack([
-            self.regressionLoss(pred[:,self.regressionCols], targ[:,self.regressionCols]),
+        loss = [*[
+                self.regressionLoss(pred[:,idx], targ[:,idx])
+                    for idx in self.regressionCols
+            ],
             *[
                 self.categoriesLoss(pred[:,group_i], targ[:,group_i])
                     for group_i in self.categoriesCols
-        ]])
-        
+        ]]
         if self.reduction == 'sum':
-            return loss.sum()
+            return torch.stack(loss).sum()
         elif self.reduction == 'mean':
-            return loss.mean()
+            return torch.stack(loss).mean()
         elif self.reduction == 'random':
-            return loss[int( torch.rand((1,)) * len(loss))]
+            x = [0]
+            while sum(x) == 0:
+                x = torch.rand(len(loss)) * self.probabilities
+                x = x < 2./len(x)
+            return torch.stack([loss[idx] for idx, x_i in enumerate(x) if x_i]).mean()
         elif self.reduction == 'none':
-            return loss
+            # flat = []
+            # for category in loss:
+            #     flat.extend(torch.flatten(category))
+            # return torch.stack(flat)
+            loss_dict = {
+                self.output_cols[self.regressionCols[idx]] : loss[idx].double().cpu().item()
+                    for idx in range(len(self.regressionCols))
+            }
+            for offset, category in enumerate(self.categoriesCols):
+                label = self.output_cols[category[0]]
+                label = label[:label.find('_Is_')]
+                loss_dict[label] = loss[len(self.regressionCols)+offset].double().cpu().item()
+                
+            return loss_dict
         else :
             raise ValueError(f'Unrecognised reduction type; got {self.reduction}')
         

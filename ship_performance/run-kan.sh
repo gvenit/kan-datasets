@@ -4,7 +4,7 @@
 # Configuration arguments
 # -- Leave empty for default values
 ########################################
-TEST_VERSION=HuberLoss      # TestLoss  -linearly_normalized
+TEST_VERSION=HuberLoss-prob_abs_silu-smooth_0.1      # TestLoss  -linearly_normalized
 SEED=42
 
 LAYERS="256 256"
@@ -15,8 +15,8 @@ SCALE=2                     #  2
 
 EPOCHS=10000
 BATCH=128
-LR=1e-3
-OPTIMIZER="RMSprop"         # Adam
+LR=3e-4
+OPTIMIZER="RMSprop"         # Adam RMSprop
 WEIGHT_DECAY=5e-4           # 1e-4
 MOMENTUM=                   # 0.9
 MODE='RSWAFF'                # 'RSWAFF'
@@ -165,13 +165,15 @@ if [ -n "$TEST_VERSION" ]; then
 fi 
 
 print_verbose [EXEC] $THIS_DIR/create_configs.py $CONFIGS --export
-test_dir=$(dry_run $THIS_DIR/create_configs.py $CONFIGS --export)
+test_dir=$(dry_run $THIS_DIR/create_configs.py "${CONFIGS}" --export)
+
+print_verbose $test_dir
 
 if [ $dryrun -ge 1 ]; then
     test_dir=path/to/test/directory
 fi
 
-print_exec $THIS_DIR/train_model.py -d $test_dir
+# print_exec $THIS_DIR/train_model.py -d $test_dir
 
 print_exec $THIS_DIR/test_model.py -d $test_dir
 

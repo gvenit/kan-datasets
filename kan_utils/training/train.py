@@ -167,6 +167,7 @@ def train(
                 loc_kwargs = {
                     'model'         : model,
                     'epoch'         : epoch, 
+                    'epochs'        : epochs,
                     'tr_loss'       : tr_loss,
                     'best_loss'     : best_loss, 
                     'dataloader'    : train_dataloader, 
@@ -236,17 +237,19 @@ def train(
                 loc_kwargs = {
                     'model'            : model,
                     'epoch'            : epoch, 
+                    'epochs'           : epochs,
                     'tr_loss'          : tr_loss,
                     'val_loss'         : val_loss,
                     'best_loss'        : best_loss, 
                     'train_dataloader' : train_dataloader, 
+                    'eval_dataloader'  : eval_dataloader, 
                     'optimizer'        : optimizer,
                     'scheduler'        : scheduler,
                     'device'           : device,
                     'history'          : history,
                 }
                 loc_kwargs.update(callbacks_arguments)
-                for callback in callbacks['train_end']:
+                for callback in callbacks['epoch_end']:
                     callback(**loc_kwargs)
                     
                 scheduler.step(val_loss)
@@ -262,6 +265,45 @@ def train(
     except Exception as e:
         if show_pbar == 'external':
             pbar_epoch.close()
+            
+        loc_kwargs = {
+            'model'            : model,
+            'epoch'            : epoch, 
+            'epochs'           : epochs,
+            'val_loss'         : val_loss,
+            'best_loss'        : best_loss, 
+            'train_dataloader' : train_dataloader, 
+            'eval_dataloader'  : eval_dataloader, 
+            'optimizer'        : optimizer,
+            'scheduler'        : scheduler,
+            'device'           : device,
+            'history'          : history,
+            'exception'        : e, 
+        }
+        loc_kwargs.update(callbacks_arguments)
+        for callback in callbacks['exception_raised']:
+            callback(**loc_kwargs)
+        for callback in callbacks['training_finished']:
+            callback(**loc_kwargs)
+            
         raise e
     
+    loc_kwargs = {
+        'model'            : model,
+        'epoch'            : epoch, 
+        'epochs'           : epochs,
+        'tr_loss'          : tr_loss,
+        'val_loss'         : val_loss,
+        'best_loss'        : best_loss, 
+        'train_dataloader' : train_dataloader, 
+        'eval_dataloader'  : eval_dataloader, 
+        'optimizer'        : optimizer,
+        'scheduler'        : scheduler,
+        'device'           : device,
+        'history'          : history,
+    }
+    loc_kwargs.update(callbacks_arguments)
+    for callback in callbacks['training_finished']:
+        callback(**loc_kwargs)
+        
     return history

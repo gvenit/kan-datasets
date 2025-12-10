@@ -10,10 +10,10 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from prepare_dataset import build_datset, expand_df_labels, set_df_labels, normalize_dataset
 
-
 def extract_correlate(df, output_dir = None):
     # print(df.columns)
     df_corr = df.corr()
+    df_corr.index.names = ['Labels']
 
     if output_dir is not None:
         axis_corr = sns.heatmap(
@@ -36,6 +36,18 @@ def extract_correlate(df, output_dir = None):
         plt.close('all')
     else :
         return df_corr
+
+def get_corellate():
+    if 'df_corr' not in globals():
+        path = os.path.join(THIS_DIR,'dataset','confusion_matrix.csv')
+        if not os.path.exists(path):
+            df_corr = extract_correlate(set_df_labels(build_datset()))
+            df_corr.to_csv(path)
+        else:
+            df_corr = pd.read_csv(path, index_col='Labels')
+        globals()['df_corr'] = df_corr
+    
+    return globals()['df_corr']
 
 def extract_statistics(df, output_dir = None):
     stats = {
@@ -66,9 +78,16 @@ def extract_statistics(df, output_dir = None):
         print(stats)
     
 if __name__ == '__main__':
+    if os.path.exists(os.path.join(THIS_DIR,'dataset','confusion_matrix.csv')):
+        os.remove(os.path.join(THIS_DIR,'dataset','confusion_matrix.csv'))
     # Download latest version
     df = set_df_labels(build_datset())
     extract_correlate(df, os.path.join(THIS_DIR,'dataset'))
+    
+    get_corellate()
+    get_corellate()
+    del globals()['df_corr']
+    print('get_corellate', get_corellate())
     
     df = expand_df_labels(build_datset())
     extract_statistics(df, os.path.join(THIS_DIR,'dataset'))
