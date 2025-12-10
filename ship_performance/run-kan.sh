@@ -173,7 +173,7 @@ if [ $dryrun -ge 1 ]; then
     test_dir=path/to/test/directory
 fi
 
-# print_exec $THIS_DIR/train_model.py -d $test_dir
+print_exec $THIS_DIR/train_model.py -d $test_dir
 
 print_exec $THIS_DIR/test_model.py -d $test_dir
 
