@@ -19,11 +19,12 @@ def load_model(model: Module, fname:str, device = torch.device('cpu')):
     model.cpu().load_state_dict(state_dict)
     return model.to(device)
 
-def save_dict(obj : dict, fname):
+def save_dict(obj : dict, fname : str):
     if os.path.splitext(fname)[-1] != '.json':
         fname = f'{fname}.json'
     with open(fname, 'w') as fwriter:
         json.dump(obj, fwriter, indent=2)
+    return fname
 
 def load_dict(fname) -> dict:
     if os.path.splitext(fname)[-1] != '.json':
@@ -44,5 +45,5 @@ def expand_value(val, size):
     if len(val) < size:
         val = val + [val[-1] for _ in range(size-len(val))]
 
-    assert len(val) == size
+    assert len(val) == size, f"Size missmatch; expected size {size}; got {len(val)} \n {val}"
     return val

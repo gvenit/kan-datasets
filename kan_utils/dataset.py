@@ -41,6 +41,50 @@ def split_dataset(splits, full_dataset, seed = None):
         
     return random_split(full_dataset, splits)
     
+def smart_split_indices(splits: list[float], dataset, groups:dict[str, list] | dict[str, dict], seed = None):
+    '''A method for randomly splitting indices for grouped data.
+    
+    Args
+    ----
+    splits : list
+        A list containing weights with respect to the target size of the subsets
+    groups : dict
+        A dictionary containing groups of indexes in the following form:
+            >>> groups = {
+            ...     'Group_0 (label_0_0)' : {
+            ...         'Group_1 (label_1_0)' : {
+            ...             ... : {
+            ...                 'Group_N (label_N_0)' :[
+            ...                     idx_N_0_A,
+            ...                     idx_N_0_B,
+            ...                     ...
+            ...                 ], ...,
+            ...                 'Group_N (label_N_M)' :[
+            ...                     idx_N_M_A,
+            ...                     idx_N_M_B,
+            ...                     ...
+            ...                 ]
+            ...             }
+            ...         }
+            ...     }
+            ... }  
+    seed : int, Optional
+        If specified, the seed to use for a deterministic split.
+    '''
+    sets = [[] for _ in splits]
+    for key, val in groups.items():
+        if isinstance(val, dict):
+            subsets = smart_split_indices(splits, val, seed)
+        else :
+            subsets = split_dataset(splits, val, seed)
+            subsets = [[val[_] for _ in subset.indices] for subset in subsets]
+                
+        for _iter, subset in enumerate(subsets):
+            sets[_iter].extend(subset)
+            
+    torch.utils.data.Subset(dataset, train_idx)
+    return sets
+
 if __name__ == '__main__':
     df = pd.DataFrame({
         i : ((torch.tensor(range(100)) / 100.) ** i).tolist()

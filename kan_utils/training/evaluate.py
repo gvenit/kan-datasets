@@ -99,15 +99,24 @@ def evaluate(
         for callback in callbacks['eval_start']:
             callback(**loc_kwargs)
             
-        for data in pbar:
-            if len(data) == 3:
-                data, target, key = data[0].to(device), data[1].to(device), data[2]
-                # print(key)
+        for data, target, *key in pbar:
+            if isinstance(data, tuple):
+                data = (_.to(device) for _ in data)
+            else :
+                data = data.to(device)
+                
+            if isinstance(data, tuple):
+                target = (_.to(device) for _ in target)
+            else :
+                target = target.to(device)
+            
+            if len(key) > 0:
+                key = key[0]
                 if isinstance(key, torch.Tensor):
                     key = key.tolist()
             else :
-                data, target, key = data[0].to(device), data[1].to(device), None
-               
+                key = None
+                          
             loc_kwargs = {
                 'model'         : model,
                 'epoch'         : epoch, 

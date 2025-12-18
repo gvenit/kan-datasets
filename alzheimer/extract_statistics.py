@@ -69,7 +69,7 @@ def extract_statistics(df, output_dir = None):
         key : df.aggregate(key)
             for key in ['min', 'max', 'mean', 'std']
     }}
-    stats = pd.DataFrame(stats).set_index('index')
+    stats = pd.DataFrame(stats).set_index('index').astype(float)
 
     if output_dir is not None:
         stats.to_csv(os.path.join(output_dir,'normalized_statistics.csv'))

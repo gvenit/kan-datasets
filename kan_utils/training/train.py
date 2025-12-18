@@ -97,8 +97,15 @@ def train(
 
             try :
                 for _iter, (data, target) in enumerate(pbar_iter, start=1):
-                    data = data.to(device)
-                    target = target.to(device)
+                    if isinstance(data, tuple):
+                        data = (_.to(device) for _ in data)
+                    else :
+                        data = data.to(device)
+                        
+                    if isinstance(data, tuple):
+                        target = (_.to(device) for _ in target)
+                    else :
+                        target = target.to(device)
                     
                     loc_kwargs = {
                         'model'            : model,

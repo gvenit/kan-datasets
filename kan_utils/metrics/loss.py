@@ -96,36 +96,35 @@ class MixedLoss(torch.nn.Module):
             return loss_dict
         else :
             raise ValueError(f'Unrecognised reduction type; got {self.reduction}')
-        
-class TestLoss(torch.nn.Module):
-    def __init__(self, basis = torch.nn.HuberLoss, epsilon = .1, reduction : Literal['none','sum','mean'] = 'mean'):
-        super(TestLoss,self).__init__()
-        # self.threshold_diff = threshold
-        self.threshold_targ = 1e-3
-        self.threshold_norm = 1e-2
-        self.epsilon = epsilon
-        self.reduction = reduction
-        
-        self.basis = basis(reduction='none')
-        
-    def forward(self, input, target):
-        mask_targ = target.abs() < self.threshold_targ
-        
-        diff = input-target
-        # mask_diff = diff.abs() < self.threshold_diff
-        
-        ndiff = (~mask_targ) * diff / (target.abs() + mask_targ)
-        mask_norm = ((ndiff).abs() < self.threshold_norm)
-        
-        loss  = self.basis(diff, torch.zeros_like(diff))
-        nloss = self.basis(ndiff, torch.zeros_like(diff))
-        
-        mask = mask_targ + mask_norm
-        loss = loss * mask + nloss * (~mask)
-        
-        if self.reduction == 'mean':
-            return loss.mean()
-        elif self.reduction == 'sum':
-            return loss.sum()
+    
+class Accuracy2Loss(torch.nn.Module):
+    '''A wrapper for transforming accuracy metrics to loss criteria.
+    
+    Args
+    ----------
+    target: Module
+        The target accuracy metric class.
+    *args : Any, Optional
+        If `instantiated == False`, the positional arguments for `target`, if any.
+    instantiated: bool, Optional
+        If `True`, target is treated as a callable object and any extra arguments are ignored. Default is `False`.
+    **kwargs : Any, Optional
+        If `instantiated == False`, the keyword arguments for `target`, if any.
+    '''
+    def __init__(
+        self, 
+        target : torch.nn.Module,
+        *args, 
+        instantiated = False,
+        **kwargs
+    ):
+        super(Accuracy2Loss,self).__init__()
+        if instantiated:
+            self.target = target
         else :
-            return loss
+            self.target = target(*args, **kwargs)
+        
+    def forward(self, pred : torch.Tensor, targ : torch.Tensor):
+        acc = self.target(pred, targ)
+        return torch.ones_like(acc) - acc
+    

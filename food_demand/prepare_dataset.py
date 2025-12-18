@@ -83,7 +83,7 @@ def expand_df_labels(
         )
     return df[df.columns.sort_values()]  
 
-def build_datset(force = False):
+def build_dataset(force = False):
     dataset_path = os.path.join(__dataset_dir,'{name}.csv')
     if force or not np.array([
         os.path.exists(dataset_path.format(name=name)) 
@@ -166,7 +166,7 @@ def normalize_dataset(
 
 if __name__ == '__main__':
     # Download latest version
-    df = build_datset()
+    df = build_dataset()
     print('FIX THIS')
     exit()
 

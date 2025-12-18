@@ -77,12 +77,12 @@ import set_environment
 import pandas as pd
 import torch
 from torch.utils.data import DataLoader
-from kan_utils.utils import load_model, load_dict, save_dict
+from kan_utils.utils import load_model, load_dict, save_dict, set_seed
 from kan_utils.dataset import DataFrameToDataset, split_dataset
 from kan_utils.performance import get_summary
 from kan_utils.config import *
 from kan_utils.training import evaluate
-from prepare_dataset import build_datset, expand_df_labels, normalize_dataset
+from prepare_dataset import build_dataset, expand_df_labels, normalize_dataset
 from extract_statistics import extract_statistics
 import custom_callbacks
 
@@ -118,10 +118,11 @@ if len(eval_criteria):
 else :
     print('  No evaluation criteria.')
 
+set_seed(train_config['seed'])
 *_, test_loader = split_dataset(
     splits          = train_config['splits'],
     full_dataset    = DataFrameToDataset(
-        normalize_dataset(expand_df_labels(build_datset())),
+        normalize_dataset(expand_df_labels(build_dataset())),
         input_cols  = model_config['input'],
         output_cols = model_config['output'],
         return_key  = True,

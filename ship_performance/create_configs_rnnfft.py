@@ -36,11 +36,11 @@ from kan_utils.metrics import MixedLoss
 from kan_utils.models import RNNFFT, OptimisedRNNFFT
 from kan_utils.utils import expand_value
 from kan_utils.config import find_object_from_name
-from prepare_dataset import build_datset, expand_df_labels
+from prepare_dataset import build_dataset, expand_df_labels
 
 model_config = get_default_model_config()
 
-df = expand_df_labels(build_datset())
+df = expand_df_labels(build_dataset())
 
 model_config['input']  = df.columns
 model_config['output'] = df.columns

@@ -79,7 +79,7 @@ from kan_utils.utils import load_dict
 import kan_utils.plotter as plotter
 
 # from kan_utils.config import *
-# from prepare_dataset import build_datset, expand_df_labels, normalize_dataset
+# from prepare_dataset import build_dataset, expand_df_labels, normalize_dataset
 import matplotlib.pyplot as plt
 
 # Check configuration file validity

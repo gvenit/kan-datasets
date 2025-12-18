@@ -26,7 +26,7 @@ where:
 Example Usage:
 -------------
     model = FasterKAN(
-        layers_hidden=[784, 100, 10],  # Input, hidden, output dimensions
+        hidden_layers=[784, 100, 10],  # Input, hidden, output dimensions
         num_grids=10,                 # Grid points for RBFs
         grid_min=-3.0,                # Minimum grid value
         grid_max=3.0,                 # Maximum grid value
@@ -290,7 +290,7 @@ class FasterKAN(nn.Module):
     This model stacks multiple FasterKANLayers to create a deep RBF-KAN architecture.
     
     Args:
-        layers_hidden (List[int]): List of layer dimensions including input and output dimensions
+        hidden_layers (List[int]): List of layer dimensions including input and output dimensions
             e.g., [784, 100, 10] for MNIST classification with one hidden layer
         num_grids (Union[int, List[int]]): Number of grid points for each layer
             If a single int is provided, it's used for all layers
@@ -311,7 +311,7 @@ class FasterKAN(nn.Module):
         ```
     """
     def __init__(
-        self, layers_hidden: List[int], 
+        self, hidden_layers: List[int], 
         num_grids: Union[int, List[int]],
         grid_min: float,
         grid_max: float,
@@ -324,19 +324,19 @@ class FasterKAN(nn.Module):
         self.train_grid = True
         self.train_inv_denominator = True
         
-        num_grids       = expand_value(num_grids,       len(layers_hidden)-1)
-        grid_min        = expand_value(grid_min,        len(layers_hidden)-1)
-        grid_max        = expand_value(grid_max,        len(layers_hidden)-1)
-        inv_denominator = expand_value(inv_denominator, len(layers_hidden)-1)
-        residual        = expand_value(residual,        len(layers_hidden)-1)
+        num_grids       = expand_value(num_grids,       len(hidden_layers)-1)
+        grid_min        = expand_value(grid_min,        len(hidden_layers)-1)
+        grid_max        = expand_value(grid_max,        len(hidden_layers)-1)
+        inv_denominator = expand_value(inv_denominator, len(hidden_layers)-1)
+        residual        = expand_value(residual,        len(hidden_layers)-1)
         
         self.residual   = []
         for _iter, residual_i in enumerate(residual):
             if residual_i :
-                if layers_hidden[_iter] == layers_hidden[_iter+1] :
+                if hidden_layers[_iter] == hidden_layers[_iter+1] :
                     self.residual.append(True)
                 else :
-                    warn(f"Skipped residual connection at layer {_iter}; Number of features do not match ({layers_hidden[_iter]} != {layers_hidden[_iter+1]})")
+                    warn(f"Skipped residual connection at layer {_iter}; Number of features do not match ({hidden_layers[_iter]} != {hidden_layers[_iter+1]})")
                     self.residual.append(False)
             else :
                 self.residual.append(False)
@@ -361,8 +361,8 @@ class FasterKAN(nn.Module):
                 inv_denominator_i, 
             ) in enumerate(zip(
                 num_grids, 
-                layers_hidden[:-1], 
-                layers_hidden[1:],
+                hidden_layers[:-1], 
+                hidden_layers[1:],
                 grid_min,
                 grid_max,
                 inv_denominator,
@@ -412,7 +412,7 @@ class FasterKAN(nn.Module):
 #     This model stacks multiple FasterKANLayers to create a deep RBF-KAN architecture.
     
 #     Args:
-#         layers_hidden (List[int]): List of layer dimensions including input and output dimensions
+#         hidden_layers (List[int]): List of layer dimensions including input and output dimensions
 #             e.g., [784, 100, 10] for MNIST classification with one hidden layer
 #         num_grids (Union[int, List[int]]): Number of grid points for each layer
 #             If a single int is provided, it's used for all layers
@@ -433,7 +433,7 @@ class FasterKAN(nn.Module):
 #         ```
 #     """
 #     def __init__(
-#         self, layers_hidden: List[int], 
+#         self, hidden_layers: List[int], 
 #         num_grids: Union[int, List[int]],
 #         grid_min: float,
 #         grid_max: float,
@@ -444,10 +444,10 @@ class FasterKAN(nn.Module):
 #         self.train_grid = True
 #         self.train_inv_denominator = True
         
-#         num_grids       = expand_value(num_grids,       len(layers_hidden)-1)
-#         grid_min        = expand_value(grid_min,        len(layers_hidden)-1)
-#         grid_max        = expand_value(grid_max,        len(layers_hidden)-1)
-#         inv_denominator = expand_value(inv_denominator, len(layers_hidden)-1)
+#         num_grids       = expand_value(num_grids,       len(hidden_layers)-1)
+#         grid_min        = expand_value(grid_min,        len(hidden_layers)-1)
+#         grid_max        = expand_value(grid_max,        len(hidden_layers)-1)
+#         inv_denominator = expand_value(inv_denominator, len(hidden_layers)-1)
 
 #         self.layers = nn.ModuleList([
 #             FasterKANLayer(
@@ -468,8 +468,8 @@ class FasterKAN(nn.Module):
 #                 inv_denominator_i, 
 #             ) in enumerate(zip(
 #                 num_grids, 
-#                 layers_hidden[:-1], 
-#                 layers_hidden[1:],
+#                 hidden_layers[:-1], 
+#                 hidden_layers[1:],
 #                 grid_min,
 #                 grid_max,
 #                 inv_denominator,

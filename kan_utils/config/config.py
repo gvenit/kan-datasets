@@ -22,6 +22,7 @@ __cls_dict = get_locals(
     torchmetrics,
     torchmetrics.classification,
     torchmetrics.regression,
+    torchmetrics.image,
     metrics,
     models,
 )
@@ -30,7 +31,7 @@ def get_default_model_config() -> dict:
     return {
         'model'                 : models.FasterKAN,
         'model_kwargs'          : {
-            'layers_hidden'     : None,
+            'hidden_layers'     : None,
             'num_grids'         : None,
             'grid_min'          : None,
             'grid_max'          : None,
@@ -182,9 +183,14 @@ def save_config(config, path) -> None:
     '''
     config = parse_config(config)
 
+    if os.path.splitext(path)[-1] != '.json':
+        path = f'{path}.json'
+        
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, 'w') as fw:
         json.dump(config, fw, indent=2)
+        
+    return path
 
 def load_config(path, locals : dict[str, object]=None) -> dict:
     '''Load a configuration dictionary from the specified json file.
@@ -200,9 +206,12 @@ def load_config(path, locals : dict[str, object]=None) -> dict:
     -------
     dict : The configuration dictionary
     '''
+    if os.path.splitext(path)[-1] != '.json':
+        path = f'{path}.json'
+        
     with open(path, 'r') as fr:
         config = json.load(fr)
-        
+
     return parse_json(config, locals)
 
 def weak_instantiate_all(config : dict[str,object] | Iterable | object) -> dict[str,object] | Iterable | object:

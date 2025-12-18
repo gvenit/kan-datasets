@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 from typing import Literal
 import sys, os
 
@@ -16,14 +17,14 @@ def create_labels(
     label_enumeration : Literal['linear', 'exponential'] = 'linear',
     force = False, 
     ) -> dict:
+    # print(df.dtypes)
     json_path = os.path.join(__dataset_dir,'labels.json')
     if force or not os.path.exists(json_path):
         label_dict = {}
         
-        for col in df.dtypes[df.dtypes == 'object'].index:
-            if col == 'Date':
+        for col in df.dtypes[df.dtypes == 'category'].index:
+            if col == 'MMSE':
                 continue
-            
             label_dict[col] = {}
             
             for idx, val in enumerate(df[col].sort_values().unique(), start=(label_enumeration == 'linear')):
@@ -46,8 +47,10 @@ def set_df_labels(
         
     for col, labels in label_dict.items():
         df[col] = df[col].apply(
-            lambda row : labels[row if isinstance(row, str) else 'Unknown']
+            lambda row : labels[str(row)]
         )
+        if len(labels) < 2:
+            df = df.drop(columns=col)
     if 'Date' in df.columns:
         df['Date'] = pd.to_datetime(df['Date'])
         df['Date'] = df['Date'].apply(
@@ -64,14 +67,12 @@ def expand_df_labels(
         
     for col, labels in label_dict.items():
         for label in labels.keys():
-            if label != 'NaN' :
-                df[f'{col}_Is_{label}'] = df[col].apply(
-                    lambda row : int(row == label)
-                )
+            if str(label).lower() == 'nan' :
+                df[f'{col}_Is_Unknown'] = (pd.isna(df[col]) | (df[col] == 'NaN')).astype('int8')
             else :
-                df[f'{col}_Is_Unknown'] = df[col].apply(
-                    lambda row : str(row).lower() == 'nan'
-                )
+                df[f'{col}_Is_{label}'] = (df[col] == label).astype('int8')
+        
+        assert df[[f'{col}_Is_{"Unknown" if str(label).lower() == 'nan' else label}' for label in labels]].values.sum() == len(df), str(df[[f'{col}_Is_{"Unknown" if str(label).lower() == 'nan' else label}' for label in labels]])
             
         df.drop(labels=col, axis=1, inplace=True)
         
@@ -82,36 +83,200 @@ def expand_df_labels(
         )
     return df[df.columns.sort_values()]  
 
-def build_datset(force = False):
-    dataset_path = os.path.join(__dataset_dir,'Ship_Performance_Dataset.csv')
+def _exe(file, input_dir) :
+    import subprocess
+    local_dir = os.path.splitext(file)[0].split('_')[:-1]
+    target_dir = os.path.join(__dataset_dir, 'slices', *local_dir)
+    os.makedirs(target_dir, exist_ok=True)
+    return subprocess.run(
+        ' '.join((
+            'med2image',
+            '-I', input_dir,
+            '-i', file,
+            # '-i', os.path.join(input_dir, file),
+            '-d', target_dir,
+            '-t jpg',
+            '-o sample',
+            '--reslice',
+            '--verbosity 0'
+        )),
+        shell = True,
+        text = True,
+    )
+    
+def build_dataset(force = False):
+    dataset_path = os.path.join(__dataset_dir,'slices')
     if force or not os.path.exists(dataset_path):
         os.environ['KAGGLE_CONFIG_DIR'] = TOP_DIR
         import kagglehub
         import kaggle as kg
+        from tqdm import tqdm
+        import multiprocessing as mp
         
+        # Download Data
         kagglehub.whoami()
-        kg.api.dataset_download_files("daniilkrasnoproshin/alzheimers-disease-and-healthy-aging-data", path=__dataset_dir, unzip=True, force=force)
+        # kg.api.dataset_download_files("ninadaithal/oasis-1-shinohara", path=__dataset_dir, unzip=True, force=force)
+        
+        input_dir = os.path.join(__dataset_dir, 'oasis', 'OASIS')
+        
+        with mp.Pool(mp.cpu_count()) as pool:
+            with tqdm(os.listdir(input_dir)) as pbar:
+                    
+                for file in pbar:
+                    pbar.set_postfix({'Current file' : file})
+                    result = pool.apply_async(_exe, (file, input_dir))
+                    
+                result = result.get()
+                assert result is None, f"Result is {result}"
         
     return get_dataset()
 
 def get_dataset():
-    dataset_path = os.path.join(__dataset_dir,'Ship_Performance_Dataset.csv')
-    df = pd.read_csv(dataset_path)
-    for col in df.dtypes[df.dtypes == 'object'].index:
-        if col == 'Date':
-            continue
-        idx = df[col].isna()
-        df.loc[idx, [col]] = 'Unknown'
-    return df
+    dataset_path = os.path.join(__dataset_dir,'oasis_cross-sectional.csv')
+    df = pd.read_csv(dataset_path, index_col='ID')
+    for col in list(df.dtypes[df.dtypes == 'object'].index) + ['Educ', 'SES', 'CDR', 'MMSE']:
+        df[col] = df[col].apply(
+            lambda row: 'NaN' if pd.isna(row) else str(int(row) if isinstance(row, float) else row)
+        ).astype('category')
+        
+    input_dir = os.path.join(__dataset_dir, 'oasis', 'OASIS')
+    img_paths = os.listdir(input_dir)
+    df['Path'] = [pth for pth in img_paths for idx in df.index if idx in pth]
+    df['Path'] = [
+        os.path.join(__dataset_dir, 'slices', *os.path.splitext(file)[0].split('_')[:-1])
+        for file in df['Path']
+    ]
+    df = df.drop(columns='Hand')
+    return create_groups(df)
+
+def __make_groups(df : pd.DataFrame, label_dict = {}, indices = None):
+    if indices is None:
+        indices = df.index.to_list()
+        
+        # Reverse dictionary key order
+        dict_label = {}
+        while  len(label_dict) > 0:
+            key, val = label_dict.popitem()
+            dict_label[key] = val
+            
+        # print(label_dict, dict_label)
+        # print(dict_label)
+        label_dict = dict_label
+        # print(label_dict)
+        
+    if len(label_dict) < 1 or df.empty or len(indices) < 1:
+        return indices
+    
+    key, labels = label_dict.popitem()
+    # print(key, labels)
+    df = df.loc[indices]
+    subgroup = {
+        f'{key} ({label})' : __make_groups(
+            df,
+            label_dict.copy(),(
+                df[df[key].isna()] if isinstance(label, float) and np.isnan(label) 
+                    else df[df[key] == label]
+            ).index.to_list()
+        )
+            for label in labels 
+    }
+    for key in list(subgroup.keys()):
+        if len(subgroup[key]) == 0:
+            subgroup.pop(key)
+    
+    return subgroup
+    
+def create_groups(df : pd.DataFrame, inplace=False):
+    df_local = df.copy()
+    
+    # Level 1: Age -- Groups [<=25, <=45, <= 65, >65]
+    age_bins = [0,25,45,65,100]
+    age_labels = ['18-25','26-45','46-65','65+']
+    df_local['Age_Group'] = pd.cut(df_local['Age'], bins=age_bins, labels=age_labels)
+    
+    # Level 2: Number of scans -- Groups [1, 2] (Auto)
+    df_local['Num_Scans'] = [str(_)[:str(_).find('_MR')] for _ in df_local.index]
+    num_scan_labels = df_local['Num_Scans'].value_counts()
+    df_local['Num_Scans'] = df_local['Num_Scans'].apply(lambda row: num_scan_labels[row])
+    
+    # Level 4: Dominant Hand -- Groups [Right, Left] (Auto)
+    # -- Drop because there are only right handed patients
+    # hand_labels = df['Hand'].unique()
+    # print(hand_labels)
+    if 'Hand' in df.columns:
+        df.drop(columns=['Hand'], inplace=True)
+    
+    if inplace:
+        df.assign(df_local.to_dict())
+    else :
+        return df_local
+    
+def make_groups(df) :
+    if 'Age_Group' not in df.columns:
+        df = create_groups(df)
+        
+    # Level 1: Age -- Groups [<=25, <=45, <= 65, >65]
+    age_labels = df['Age_Group'].unique()
+    
+    # Level 2: Number of scans -- Groups [1, 2] (Auto)
+    num_scan_labels = df['Num_Scans'].unique()
+    
+    # Level 3: CDR -- Groups [0, 0.5, 1, 2] (Auto)
+    cdr_labels = df['CDR'].unique()
+    # print(cdr_labels)
+    
+    # Level 5: Sex -- Groups [Male, Female] (Auto)
+    sex_labels = df['M/F'].unique()
+    # print(sex_labels)
+    
+    # Level 6: Education -- Groups [1, 2, 3, 4, 5, N/A] (Auto)
+    edu_labels = df['Educ'].unique()
+    # edu_labels.sort()
+    # print(edu_labels)
+    
+    # Level 7: Socio-Economic Status -- Groups [1, 2, 3, 4, 5, N/A] (Auto)
+    ses_labels = df['SES'].unique()
+    # ses_labels.sort()
+    # print(ses_labels)
+    
+    return __make_groups(
+        df, {
+            'Num_Scans' : num_scan_labels,
+            'CDR'       : cdr_labels,
+            'M/F'       : sex_labels,
+            'Age_Group' : age_labels,
+            'Educ'      : edu_labels,
+            'SES'       : ses_labels,
+        },
+    )
+    
+def __save_groups(groups):
+    groups_path = os.path.join(__dataset_dir, 'groups.json')
+    with open(groups_path, 'w') as fw:
+        json.dump(groups, fw, indent=2)
+    
+def get_groups(regenerate = False):
+    groups_path = os.path.join(__dataset_dir, 'groups.json')
+    
+    if os.path.exists(groups_path) and not regenerate:
+        with open(groups_path, 'r') as fr:
+            groups = json.load(fr)
+    else :
+        groups = make_groups(df)
+        __save_groups(groups)
+    return groups
 
 def normalize_dataset(
     df : pd.DataFrame,
     reverse  = False
 ):
     df = df.copy()
-    label_path = os.path.join(__dataset_dir, 'normalize.json')
+    df['MMSE'] = df['MMSE'].astype(float)
+    label_path = os.path.join(__dataset_dir, 'normalize.json') 
+    
     if not os.path.exists(os.path.join(__dataset_dir, 'statistics.csv')):
-        import extract_statistics
+        from extract_statistics import extract_statistics
+        extract_statistics(df.drop(columns=['Path']), __dataset_dir)
         
     stats = pd.read_csv(os.path.join(__dataset_dir, 'statistics.csv'), index_col='index')
     # print(stats)
@@ -162,9 +327,16 @@ def normalize_dataset(
 
 if __name__ == '__main__':
     # Download latest version
-    print('FIX THIS')
-    exit()
-    df = build_datset()
+    df = build_dataset()
+    
+    if os.path.exists(os.path.join(__dataset_dir, 'groups.json')):
+        os.remove(os.path.join(__dataset_dir, 'groups.json'))
+    groups = get_groups()
+    
+    # print(groups)
+    
+    print('Columns')
+    print(df.columns)
 
     label_dict = create_labels(df, force=True)
         
@@ -172,14 +344,19 @@ if __name__ == '__main__':
         print(key)
         for key, _val in val.items():
             print('  ', _val, key)
-            
+
     df_set = set_df_labels(df.copy(),label_dict)
     print('Set df labels')
     print(df_set)
     print(df)
     
+    print(df.describe())
+    
+    # print('FIX THIS')
+    # exit()
+    
     for col in label_dict.keys():
-        print(col, np.unique_counts(df[col].apply(str)))
+        print(df[col].value_counts(sort=True, ascending=True))
     
     df_expand = expand_df_labels(df.copy(),label_dict)
     print('Expand df labels')

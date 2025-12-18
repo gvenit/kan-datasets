@@ -82,8 +82,8 @@ def expand_df_labels(
         )
     return df[df.columns.sort_values()]  
 
-def build_datset(force = False):
-    dataset_path = os.path.join(__dataset_dir,'Ship_Performance_Dataset.csv')
+def build_dataset(force = False):
+    dataset_path = os.path.join(__dataset_dir,'fix.csv')
     if force or not os.path.exists(dataset_path):
         os.environ['KAGGLE_CONFIG_DIR'] = TOP_DIR
         import kagglehub
@@ -164,7 +164,7 @@ if __name__ == '__main__':
     # Download latest version
     print('FIX THIS')
     exit()
-    df = build_datset()
+    df = build_dataset()
 
     label_dict = create_labels(df, force=True)
         

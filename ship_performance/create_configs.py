@@ -37,13 +37,13 @@ import torchmetrics
 
 from kan_utils.config import *
 from kan_utils.metrics import *
-from prepare_dataset import build_datset, expand_df_labels
+from prepare_dataset import build_dataset, expand_df_labels
 from extract_statistics import get_corellate
 from custom_callbacks import *
 
 model_config = get_default_model_config()
 
-df = expand_df_labels(build_datset())
+df = expand_df_labels(build_dataset())
 
 model_config['input']  = df.columns
 model_config['output'] = df.columns
@@ -51,7 +51,7 @@ model_config.update(
     object_to_config(
         model_config['model'],
         target_name       = 'model',
-        layers_hidden     = [
+        hidden_layers     = [
             len(model_config['input']),
             *([] if args.hidden_layers is None else args.hidden_layers),
             len(model_config['output']),
@@ -154,7 +154,7 @@ train_config['callbacks']['training_finished'].append(
 
 def build_test_dir(train_config, model_config, top_dir = None, test_version = None):
     pdir = os.path.join(
-        '_'.join([ str(_) for _ in model_config['model_kwargs']['layers_hidden']]),
+        '_'.join([ str(_) for _ in model_config['model_kwargs']['hidden_layers']]),
         '_'.join([
             'm', *[str(_) for _ in model_config['model_kwargs']['grid_min']],
             'M', *[str(_) for _ in model_config['model_kwargs']['grid_max']],

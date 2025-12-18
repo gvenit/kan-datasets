@@ -111,7 +111,7 @@ def initialize_model(root_dir, dimension, grid_size, lr, sched, optim, criterion
     criterion_str = str(criterion)
 
     model = model_type(
-        layers_hidden=dimension,
+        hidden_layers=dimension,
         num_grids=grid_size,
         grid_min=grid_min,
         grid_max=grid_max,

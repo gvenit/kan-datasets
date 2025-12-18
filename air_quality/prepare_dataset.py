@@ -38,7 +38,7 @@ def create_labels(
         
     return label_dict
 
-def build_datset(force = False):
+def build_dataset(force = False):
     dataset_path = os.path.join(__dataset_dir,'{city}_data.csv')
     if force or not np.array([os.path.exists(dataset_path.format(city=city)) for city in ('ancona','athens','zaragoza')]).all():
         os.environ['KAGGLE_CONFIG_DIR'] = TOP_DIR
@@ -135,7 +135,7 @@ def normalize_dataset(
 
 if __name__ == '__main__':
     # Download latest version
-    df, df_test = build_datset()
+    df, df_test = build_dataset()
 
     label_dict = create_labels(df, force=True)
         

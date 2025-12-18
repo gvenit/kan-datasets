@@ -75,10 +75,13 @@ import set_environment
     
 import torch
 from torch.utils.data import DataLoader
-from kan_utils.dataset import DataFrameToDataset, split_dataset
+
 from kan_utils.config import *
+from kan_utils.dataset import DataFrameToDataset, split_dataset
 from kan_utils.training import train
-from prepare_dataset import build_datset, expand_df_labels, normalize_dataset
+from kan_utils.utils import set_seed
+
+from prepare_dataset import build_dataset, expand_df_labels, normalize_dataset
 import extract_statistics
 import custom_callbacks
 
@@ -123,10 +126,11 @@ callbacks_arguments = weak_instantiate_all(train_config['callbacks_arguments'])
 
 # print(callbacks_arguments)
 
+set_seed(train_config['seed'])
 train_loader, val_loader, *_ = split_dataset(
     splits          = train_config['splits'],
     full_dataset    = DataFrameToDataset(
-        normalize_dataset(expand_df_labels(build_datset())),
+        normalize_dataset(expand_df_labels(build_dataset())),
         input_cols  = model_config['input'],
         output_cols = model_config['output'],
     ),
