@@ -5,44 +5,55 @@ THIS_DIR = os.path.dirname(__file__)
 TOP_DIR = os.path.dirname(THIS_DIR)
 sys.path.append(TOP_DIR)
 
+import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
-from prepare_dataset import build_datset, expand_df_labels, set_df_labels, normalize_dataset
+from prepare_dataset import get_prepared_dataset, set_df_labels, normalize_dataset, clean_dataset, build_dataset
 
-def extract_correlate(df, output_dir = None):
-    # print(df.columns)
-    df_corr = df.corr()
-    df_corr.index.names = ['Labels']
+def extract_correlate(df, output_dir=None):
+    df_numeric = df.select_dtypes(include=['number'])
+    df_corr = df_numeric.corr()
 
-    if output_dir is not None:
-        axis_corr = sns.heatmap(
-            df_corr,
-            vmin=-1, 
-            vmax=1, 
-            center=0,
-            cmap="coolwarm",
-            # cmap=sns.diverging_palette(50, 500, n=500, as_cmap=True),
-            cbar_kws={"shrink": .5},
-            # square=True,
-            # annot=True,
-            # fmt=".1f",
-            linewidth=.5,
-        )
-        plt.title('Correlation Matrix Heatmap')
-        axis_corr.tick_params(labelsize=5)
-        plt.tight_layout()
-        plt.savefig(os.path.join(output_dir,'correlation.png'))
-        plt.close('all')
-    else :
+    if output_dir is None:
         return df_corr
+
+    # --- Dynamic sizing based on number of variables ---
+    n = df_corr.shape[0]
+    fig_height = max(6, 0.35 * n)
+    fig_width = max(6, 0.35 * n)
+
+    fig, ax = plt.subplots(figsize=(fig_width, fig_height))
+
+    sns.heatmap(
+        df_corr,
+        vmin=-1,
+        vmax=1,
+        center=0,
+        cmap="coolwarm",
+        ax=ax
+    )
+    ax.set_yticks(np.arange(n) + 0.5)
+    ax.set_yticklabels(df_corr.index, fontsize=6)
+
+    ax.set_xticks(np.arange(n) + 0.5)
+    ax.set_xticklabels(df_corr.columns, rotation=90, fontsize=6)
+
+    ax.set_title('Correlation Matrix Heatmap', pad=12)
+
+    plt.savefig(
+        os.path.join(output_dir, 'correlation.png'),
+        dpi=300,
+        bbox_inches='tight'
+    )
+    plt.close(fig)
 
 def get_corellate():
     if 'df_corr' not in globals():
         path = os.path.join(THIS_DIR,'dataset','confusion_matrix.csv')
         if not os.path.exists(path):
-            df_corr = extract_correlate(set_df_labels(build_datset()))
-            df_corr.to_csv(path)
+            df_corr = extract_correlate(set_df_labels(clean_dataset(build_dataset())))
+            df_corr.to_csv(path, index_label='Labels')
         else:
             df_corr = pd.read_csv(path, index_col='Labels')
         globals()['df_corr'] = df_corr
@@ -78,10 +89,10 @@ def extract_statistics(df, output_dir = None):
         print(stats)
     
 if __name__ == '__main__':
-    if os.path.exists(os.path.join(THIS_DIR,'dataset','confusion_matrix.csv')):
-        os.remove(os.path.join(THIS_DIR,'dataset','confusion_matrix.csv'))
     # Download latest version
-    df = set_df_labels(build_datset())
+    df_raw = build_dataset()
+    df_cleaned = clean_dataset(df_raw)
+    df = set_df_labels(df_cleaned)
     extract_correlate(df, os.path.join(THIS_DIR,'dataset'))
     
     get_corellate()
@@ -89,6 +100,6 @@ if __name__ == '__main__':
     del globals()['df_corr']
     print('get_corellate', get_corellate())
     
-    df = expand_df_labels(build_datset())
+    df = get_prepared_dataset(treat_quality_as_categorical=False)
     extract_statistics(df, os.path.join(THIS_DIR,'dataset'))
     
