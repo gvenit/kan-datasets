@@ -38,8 +38,7 @@ def split_dataset(splits, full_dataset, seed = None):
     generator = torch.Generator()
     if seed is not None:
         generator.manual_seed(seed)
-        
-    return random_split(full_dataset, splits)
+    return random_split(full_dataset, splits, generator=generator)
     
 if __name__ == '__main__':
     df = pd.DataFrame({
