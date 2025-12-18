@@ -116,19 +116,19 @@ callbacks_arguments = weak_instantiate_all(train_config['callbacks_arguments'])
 
 # print(callbacks_arguments)
 
-dataset = AlzheimerDataset(
-    normalize_dataset(expand_df_labels(build_dataset())), 
-    input_cols      = model_config['input'],
-    output_cols     = model_config['output'],
-    input_img_dims  = model_config['input_img_dim'],
-    output_img_dims = model_config['output_img_dim'],
-    return_key      = False, 
-    path_col        = 'Path',
-    orientation     = 'fixed',
-)
 set_seed(train_config['seed'])
-train_idx, val_idx, *_ = smart_split_indices(
+train_loader, val_loader, *_ = smart_split_indices(
     splits          = train_config['splits'],
+    full_dataset = AlzheimerDataset(
+        normalize_dataset(expand_df_labels(build_dataset())), 
+        input_cols      = model_config['input'],
+        output_cols     = model_config['output'],
+        input_img_dims  = model_config['input_img_dim'],
+        output_img_dims = model_config['output_img_dim'],
+        return_key      = False, 
+        path_col        = 'Path',
+        orientation     = 'fixed',
+    ),
     groups          = get_groups(),
     seed            = train_config['seed']
 )

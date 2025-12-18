@@ -147,11 +147,11 @@ for category, types in categories.items() :
     
     # Find probabilities of the unknown class
     gt_type = gt_slice.apply(
-        lambda row: gt_slice.columns[np.argmax(row)-1],
+        lambda row: gt_slice.columns[np.argmax(row)],
         axis=1
     )
     pr_type = pr_slice.apply(
-        lambda row: pr_slice.columns[np.argmax(row)-1],
+        lambda row: pr_slice.columns[np.argmax(row)],
         axis=1
     )
     cm = confusion_matrix(gt_type.values, pr_type.values, labels=class_names)

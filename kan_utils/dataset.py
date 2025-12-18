@@ -1,6 +1,7 @@
 import torch
 from torch.utils.data import Dataset, random_split
 import pandas as pd
+import numpy as np
 
 class DataFrameToDataset (Dataset): 
     def __init__(self, df : pd.DataFrame, input_cols, output_cols, return_key = False):
@@ -34,19 +35,58 @@ class DataFrameToDataset (Dataset):
         #     return torch.tensor(data, dtype = torch.float32), torch.tensor(targ, dtype = torch.float32), key
         # return torch.tensor(data, dtype = torch.float32), torch.tensor(targ, dtype = torch.float32)
     
+def group(df : pd.DataFrame, label_dict = {}, indices = None):
+    if indices is None:
+        indices = df.reset_index().index.to_list()
+        
+        # Reverse dictionary key order
+        dict_label = {}
+        while  len(label_dict) > 0:
+            key, val = label_dict.popitem()
+            dict_label[key] = val
+            
+        # print(label_dict, dict_label)
+        # print(dict_label)
+        label_dict = dict_label
+        # print(label_dict)
+        
+    if len(label_dict) < 1 or df.empty or len(indices) < 1:
+        return indices
+    
+    key, labels = label_dict.popitem()
+    # print(key, labels)
+    df = df.iloc[indices]
+    subgroup = {
+        f'{key} ({label})' : group(
+            df,
+            label_dict.copy(),(
+                df[df[key].isna()] if isinstance(label, float) and np.isnan(label) 
+                    else df[df[key] == label]
+            ).index.to_list()
+        )
+            for label in labels 
+    }
+    for key in list(subgroup.keys()):
+        if len(subgroup[key]) == 0:
+            subgroup.pop(key)
+    
+    return subgroup
+    
 def split_dataset(splits, full_dataset, seed = None):
     generator = torch.Generator()
     if seed is not None:
         generator.manual_seed(seed)
     return random_split(full_dataset, splits, generator=generator)
     
-def smart_split_indices(splits: list[float], dataset, groups:dict[str, list] | dict[str, dict], seed = None):
+def smart_split_indices(splits: list[float], full_dataset, groups:dict[str, list] | dict[str, dict], seed = None):
     '''A method for randomly splitting indices for grouped data.
     
     Args
     ----
     splits : list
-        A list containing weights with respect to the target size of the subsets
+        A list containing weights with respect to the target size of the subsets.
+    full_dataset : Dataset
+        The target dataset object to be split.
     groups : dict
         A dictionary containing groups of indexes in the following form:
             >>> groups = {
@@ -69,19 +109,28 @@ def smart_split_indices(splits: list[float], dataset, groups:dict[str, list] | d
             ... }  
     seed : int, Optional
         If specified, the seed to use for a deterministic split.
+        
+    Returns
+    -------
+    list[Subset]
+        A list with the split dataset
     '''
     sets = [[] for _ in splits]
     for key, val in groups.items():
         if isinstance(val, dict):
-            subsets = smart_split_indices(splits, val, seed)
+            subsets = smart_split_indices(splits, None, val, seed)
         else :
             subsets = split_dataset(splits, val, seed)
             subsets = [[val[_] for _ in subset.indices] for subset in subsets]
                 
         for _iter, subset in enumerate(subsets):
             sets[_iter].extend(subset)
-            
-    torch.utils.data.Subset(dataset, train_idx)
+    
+    if full_dataset is not None:     
+        sets = [
+            torch.utils.data.Subset(full_dataset, idx)
+                for idx in sets
+        ]
     return sets
 
 if __name__ == '__main__':

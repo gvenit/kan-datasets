@@ -91,7 +91,7 @@ class AlzheimerDataset (Dataset):
         if self.pth_isin_in:
             in_pth = os.listdir(os.path.join(pth, in_axis))
             in_img = torch.stack([
-                self.__get_input_image(in_pth_i)
+                self.__get_input_image(os.path.join(pth, in_axis, in_pth_i))
                     for in_pth_i in in_pth
             ])
         else :
@@ -100,7 +100,7 @@ class AlzheimerDataset (Dataset):
         if self.pth_isin_out:
             out_pth = os.listdir(os.path.join(pth, out_axis))
             out_img = torch.stack([
-                self.__get_output_image(out_pth_i)
+                self.__get_output_image(os.path.join(pth, out_axis, out_pth_i))
                     for out_pth_i in out_pth
             ])
         else :

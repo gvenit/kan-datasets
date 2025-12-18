@@ -10,6 +10,8 @@ import pandas as pd
 import numpy as np
 import json
 
+from kan_utils.dataset import group
+
 __dataset_dir = os.path.join(THIS_DIR,'dataset/')
 
 def create_labels(
@@ -149,43 +151,6 @@ def get_dataset():
     df = df.drop(columns='Hand')
     return create_groups(df)
 
-def __make_groups(df : pd.DataFrame, label_dict = {}, indices = None):
-    if indices is None:
-        indices = df.index.to_list()
-        
-        # Reverse dictionary key order
-        dict_label = {}
-        while  len(label_dict) > 0:
-            key, val = label_dict.popitem()
-            dict_label[key] = val
-            
-        # print(label_dict, dict_label)
-        # print(dict_label)
-        label_dict = dict_label
-        # print(label_dict)
-        
-    if len(label_dict) < 1 or df.empty or len(indices) < 1:
-        return indices
-    
-    key, labels = label_dict.popitem()
-    # print(key, labels)
-    df = df.loc[indices]
-    subgroup = {
-        f'{key} ({label})' : __make_groups(
-            df,
-            label_dict.copy(),(
-                df[df[key].isna()] if isinstance(label, float) and np.isnan(label) 
-                    else df[df[key] == label]
-            ).index.to_list()
-        )
-            for label in labels 
-    }
-    for key in list(subgroup.keys()):
-        if len(subgroup[key]) == 0:
-            subgroup.pop(key)
-    
-    return subgroup
-    
 def create_groups(df : pd.DataFrame, inplace=False):
     df_local = df.copy()
     
@@ -239,7 +204,7 @@ def make_groups(df) :
     # ses_labels.sort()
     # print(ses_labels)
     
-    return __make_groups(
+    return group(
         df, {
             'Num_Scans' : num_scan_labels,
             'CDR'       : cdr_labels,
@@ -262,7 +227,7 @@ def get_groups(regenerate = False):
         with open(groups_path, 'r') as fr:
             groups = json.load(fr)
     else :
-        groups = make_groups(df)
+        groups = make_groups(set_df_labels(build_dataset()))
         __save_groups(groups)
     return groups
 
