@@ -32,8 +32,16 @@ class ProbabilityAdjuster :
         self.smoothing_coef = smoothing_coef
         
         # Transform confusion matrix
-        self.input_cols  = [*[self.input[_]  for _ in self.input_regression_type],  *self.input_categories.keys()]
-        self.output_cols = [*[self.output[_] for _ in self.output_regression_type], *self.output_categories.keys()]
+        # Build column lists using actual column names (not category base names)
+        # For regression: use the column names directly
+        # For categories: use all the expanded column names (e.g., Certification.Body_Is_AMECAFE)
+        self.input_cols  = [*[self.input[_]  for _ in self.input_regression_type]]
+        for cat_indices in self.input_categories.values():
+            self.input_cols.extend([self.input[idx] for idx in cat_indices])
+            
+        self.output_cols = [*[self.output[_] for _ in self.output_regression_type]]
+        for cat_indices in self.output_categories.values():
+            self.output_cols.extend([self.output[idx] for idx in cat_indices])
 
         if confusion_matrix is None :
             self.cm = torch.ones(len(self.input_cols), len(self.output_cols)) / len(self.input_cols)
@@ -72,8 +80,12 @@ class ProbabilityAdjuster :
                 self.mp = None
         
         # Initiate probabilities
-        self._input_prob  = torch.ones(len(self.input_cols),  requires_grad=False).float()
-        self._output_prob = torch.ones(len(self.output_cols), requires_grad=False).float()
+        # Probabilities are per "component": one per regression column + one per category group
+        self.num_input_components = len(self.input_regression_type) + len(self.input_categories)
+        self.num_output_components = len(self.output_regression_type) + len(self.output_categories)
+        
+        self._input_prob  = torch.ones(self.num_input_components,  requires_grad=False).float()
+        self._output_prob = torch.ones(self.num_output_components, requires_grad=False).float()
         
     @classmethod  
     def _initialize(cls, columns, categories) :
@@ -110,29 +122,67 @@ class ProbabilityAdjuster :
         target_prob = torch.empty(len(columns), dtype=prob.dtype, device=prob.device)
         
         # Copy regression-type probabilities
-        target_prob[regression_type] = prob[:len(regression_type)]
+        regression_indices = list(regression_type)
+        target_prob[regression_indices] = prob[:len(regression_indices)]
         
         # Copy probabilities for each category
-        for offset, category in enumerate(categories.values()):
-            target_prob[category] = target_prob[len(regression_type)+offset].clone()
+        for offset, category_indices in enumerate(categories.values()):
+            target_prob[list(category_indices)] = prob[len(regression_indices)+offset]
         
         return target_prob
     
     def _backprop_prob(self, out_prob):
-        return (out_prob @ self.cm.T) / self.cm.sum(1)
+        # Expand component probabilities to full column space for confusion matrix
+        expanded_out = self._expand_prob(
+            out_prob,
+            self.output,
+            self.output_categories,
+            self.output_regression_type
+        )
+        
+        # Backprop through confusion matrix
+        expanded_in = (expanded_out @ self.cm.T) / self.cm.sum(1)
+        
+        # Compress back to component space
+        in_prob = torch.ones(self.num_input_components, dtype=expanded_in.dtype, device=expanded_in.device)
+        
+        # Regression components: direct copy
+        for idx, col_idx in enumerate(self.input_regression_type):
+            in_prob[idx] = expanded_in[col_idx]
+        
+        # NOTE: Category components: average over the category group ?
+        for idx, category_indices in enumerate(self.input_categories.values()):
+            in_prob[len(self.input_regression_type) + idx] = \
+                torch.stack([expanded_in[col_idx] for col_idx in category_indices]).mean()
+        
+        return in_prob
     
     def _smooth(self, x, x_smoothed):
         return self.smoothing_coef * x + (1-self.smoothing_coef) * x_smoothed
     
     def _update_logs(self, epoch, in_prob, out_prob):
         if self.logs is not None:
+            # Expand probabilities to column form for logging
+            expanded_in = self._expand_prob(
+                torch.tensor(in_prob),
+                self.input,
+                self.input_categories,
+                self.input_regression_type
+            )
+            expanded_out = self._expand_prob(
+                torch.tensor(out_prob),
+                self.output,
+                self.output_categories,
+                self.output_regression_type
+            )
+            
             # Add input probabilities
-            for idx, val in enumerate(in_prob):
-                self.prob_dict['input_probabilities'][self.input_cols[idx]][epoch] = val
+            for idx, val in enumerate(expanded_in):
+                self.prob_dict['input_probabilities'][self.input_cols[idx]][epoch] = float(val)
                 
             # Add output probabilities
-            for idx, val in enumerate(out_prob):
-                self.prob_dict['output_probabilities'][self.output_cols[idx]][epoch] = val
+            for idx, val in enumerate(expanded_out):
+                self.prob_dict['output_probabilities'][self.output_cols[idx]][epoch] = float(val)
                 
             self.saving_counter -= 1
             if self.saving_counter == 0:
@@ -271,7 +321,8 @@ class MaskInput :
         mask = torch.rand(len(self.input_regression_type) + len(self.input_categories), device = device)
         
         mask_extended = torch.empty(len(self.input), device = device, dtype = mask.dtype)
-        mask_extended[self.input_regression_type] = mask[:len(self.input_regression_type)]
+        regression_indices = list(self.input_regression_type)
+        mask_extended[regression_indices] = mask[:len(regression_indices)]
         
         for offset, category in enumerate(self.input_categories):
             mask_extended[category] = mask[len(self.input_regression_type) + offset]
