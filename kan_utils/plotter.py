@@ -28,7 +28,11 @@ def plot_confusion_matrix(
         ax: matplotlib axes object
     """
     if normalize:
-        cm = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
+        # Normalize confusion matrix, handling zero-sum rows
+        with np.errstate(divide='ignore', invalid='ignore'):
+            cm = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
+            # Replace NaN values (from rows with zero predictions) with 0
+            cm = np.nan_to_num(cm, nan=0.0)
         fmt = '.2f'
     else:
         fmt = 'd'
