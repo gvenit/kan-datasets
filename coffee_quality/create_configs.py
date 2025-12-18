@@ -1,16 +1,26 @@
 #!/usr/bin/env python3   
 import sys, os
+import json
 from argparse import ArgumentParser
+from prepare_dataset import get_prepared_dataset, NUMERIC_COLS, QUALITY_SCORE_COLS, CATEGORY_COLS, STATS_PATH
 
 THIS_DIR = os.path.dirname(__file__)
 TOP_DIR = os.path.dirname(THIS_DIR)
 sys.path.append(TOP_DIR)
 
 parser = ArgumentParser(
-    description='Training script for the Ship Performance Clusterring Dataset.'
+    description='Configuration script for the Coffee Quality Dataset.'
 )
 
+INPUT_COLS = NUMERIC_COLS.copy() + CATEGORY_COLS.copy()
+OUTPUT_COLS = QUALITY_SCORE_COLS.copy() 
+
+# INPUT_COLS = QUALITY_SCORE_COLS.copy() 
+# OUTPUT_COLS = NUMERIC_COLS.copy() + CATEGORY_COLS.copy()
+
 parser.add_argument('-d', '--dest-top-directory', dest='dest_top_dir', default=os.path.join(THIS_DIR,'train'))
+parser.add_argument('--treat-quality-as-categorical', dest='treat_quality_as_categorical', action='store_true', 
+                    help='Treat quality scores as categorical (one-hot encoded) instead of continuous values')
 parser.add_argument('--test-version', dest='test_version', default=None)
 parser.add_argument('--seed', dest='seed', type=int, default=42)
 parser.add_argument('--layers', '--hidden-layers', dest='hidden_layers', action='extend', nargs="+")
@@ -37,16 +47,52 @@ import torchmetrics
 
 from kan_utils.config import *
 from kan_utils.metrics import *
-from prepare_dataset import build_datset, expand_df_labels
-from extract_statistics import get_corellate
+from prepare_dataset import set_df_labels, create_labels
+from extract_statistics import extract_correlate
 from custom_callbacks import *
 
 model_config = get_default_model_config()
 
-df = expand_df_labels(build_datset())
+# Get the fully prepared dataset (cleaned, labeled, expanded, and normalized)
+df = get_prepared_dataset(treat_quality_as_categorical=args.treat_quality_as_categorical)
 
-model_config['input']  = df.columns
-model_config['output'] = df.columns
+# Get actual column names from the normalization stats file
+# This ensures we match exactly what exists in the cached normalized dataset
+if os.path.exists(STATS_PATH):
+    with open(STATS_PATH, 'r') as f:
+        stats = json.load(f)
+    all_cols = list(stats.keys())
+    # Filter to only columns that exist in the dataframe
+    all_cols = [col for col in stats.keys() if col in df.columns]
+    
+    # Separate into input and output based on original column definitions
+    input_cols = []
+    output_cols = []
+    
+    for col in all_cols:
+        # Check if this column belongs to an output category
+        is_output = False
+        for output_name in OUTPUT_COLS:
+            # Exact match (for non-categorical columns)
+            if col == output_name:
+                is_output = True
+                break
+            # Categorical match - must start with output_name followed by _Is_
+            # But NOT if there's a dot before _Is_ (e.g., Certification.Body_Is_X should not match Body)
+            if col.startswith(f'{output_name}_Is_'):
+                is_output = True
+                break
+        
+        if is_output:
+            output_cols.append(col)
+        else:
+            input_cols.append(col)
+else:
+    raise FileNotFoundError(f'Normalization stats file not found at {STATS_PATH}. Please run dataset preparation first.')
+
+model_config['input']  = input_cols
+model_config['output'] = output_cols
+model_config['treat_quality_as_categorical'] = args.treat_quality_as_categorical
 model_config.update(
     object_to_config(
         model_config['model'],
@@ -64,22 +110,31 @@ model_config.update(
         residual          = args.residual,
     )
 )
-categories = pd.unique(pd.Series(df.columns).apply(lambda row: row[:row.find('_Is_')]))
+categories = pd.unique(pd.Series(df.columns).apply(lambda row: row[:row.find('_Is_')] if '_Is_' in row else None))
+categories = [cat for cat in categories if cat is not None]
 categories = [[
     label for label in df.columns
-        if f'{category}_Is_' in label
+        if label.startswith(f'{category}_Is_')
     ]
         for category in categories
 ]
 categories = [_ for _ in categories if len(_)]
+
+# Separate categories for input and output
+input_categories = [cat for cat in categories if any(col in input_cols for col in cat)]
+output_categories = [cat for cat in categories if any(col in output_cols for col in cat)]
+
+# Save categories to model config for use in callbacks and testing
+model_config['input_categories'] = input_categories
+model_config['output_categories'] = output_categories
 
 train_config = get_default_training_config()
 train_config.update(
     object_to_config(
         MixedLoss,
         target_name     = 'criterion',
-        output_cols     = df.columns.tolist(),
-        categories      = categories,
+        output_cols     = model_config['output'],
+        categories      = output_categories,
         categoriesLoss  = torch.nn.BCEWithLogitsLoss,
         regressionLoss  = torch.nn.HuberLoss, # TestLoss,
         reduction       = 'random',
@@ -102,8 +157,8 @@ train_config['eval_criteria'] = {
     **object_to_config(
         MixedLoss,
         target_name     = 'loss',
-        output_cols     = df.columns.tolist(),
-        categories      = categories,
+        output_cols     = model_config['output'],
+        categories      = output_categories,
         categoriesLoss  = torch.nn.BCEWithLogitsLoss,
         regressionLoss  = torch.nn.HuberLoss, # TestLoss,
         reduction       = 'mean',
@@ -111,8 +166,8 @@ train_config['eval_criteria'] = {
     **object_to_config(
         MixedLoss,
         target_name     = 'Accuracy',
-        output_cols     = df.columns.tolist(),
-        categories      = categories,
+        output_cols     = model_config['output'],
+        categories      = output_categories,
         **object_to_config(
             OneHotMulticlassAccuracy, 
             target_name = 'categoriesLoss', 
@@ -129,7 +184,7 @@ train_config['eval_criteria'] = {
 mask = object_to_config(
     MaskInput,
     input = model_config['input'],
-    input_categories = categories,
+    input_categories = input_categories,
     max_probability = 0.4,
     x_shift = 300 / int(train_config['epochs']),
     masked_value = -1,
@@ -178,15 +233,19 @@ def build_test_dir(train_config, model_config, top_dir = None, test_version = No
 pdir = build_test_dir(train_config, model_config, top_dir=args.dest_top_dir, test_version=args.test_version)
 if not args.export :
     print(f'Test directory : {pdir}')
+
+# Compute correlation matrix from the expanded dataframe (with one-hot encoded columns)
+# This ensures column names match what the model actually uses
+df_corr = extract_correlate(df)
   
 train_config['callbacks_arguments'].update( object_to_config(
     ProbabilityAdjuster,
     target_name='probability_adjuster',
     input               = model_config['input'],
-    input_categories    = categories,
+    input_categories    = input_categories,
     output              = model_config['output'],
-    output_categories   = categories,
-    confusion_matrix    = get_corellate().to_dict(),
+    output_categories   = output_categories,
+    confusion_matrix    = df_corr.to_dict(),
     smoothing_coef      = 0.1,
     saving_interval     = 25,
     log_dir             = pdir,

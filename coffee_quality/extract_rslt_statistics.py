@@ -8,7 +8,7 @@ TOP_DIR = os.path.dirname(THIS_DIR)
 sys.path.append(TOP_DIR)
 
 parser = ArgumentParser(
-    description='Training script for the Ship Performance Clusterring Dataset.'
+    description='Extract results statistics for the Coffee Quality Dataset.'
 )
 
 parser.add_argument('-t', '--train-config', dest='train_config', help='The path to the JSON training configuration file.')
@@ -127,6 +127,11 @@ for category, types in categories.items() :
     
     # Find columns of the specified category
     cols = [col for col in gt_df.columns if category in col]
+    
+    # Skip if no columns found (e.g., quality scores are numeric, not categorical)
+    if not cols:
+        continue
+    
     categorical_cols.extend(cols)
     
     # Get DataFrame slices
@@ -147,11 +152,11 @@ for category, types in categories.items() :
     
     # Find probabilities of the unknown class
     gt_type = gt_slice.apply(
-        lambda row: gt_slice.columns[np.argmax(row)-1],
+        lambda row: gt_slice.columns[np.argmax(row)], # CRITICAL FIX
         axis=1
     )
     pr_type = pr_slice.apply(
-        lambda row: pr_slice.columns[np.argmax(row)-1],
+        lambda row: pr_slice.columns[np.argmax(row)], # CRITICAL FIX
         axis=1
     )
     cm = confusion_matrix(gt_type.values, pr_type.values, labels=class_names)

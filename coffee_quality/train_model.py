@@ -7,7 +7,7 @@ TOP_DIR = os.path.dirname(THIS_DIR)
 sys.path.append(TOP_DIR)
 
 parser = ArgumentParser(
-    description='Training script for the Ship Performance Clusterring Dataset.'
+    description='Training script for the Coffee Quality Dataset.'
 )
 
 parser.add_argument('-t', '--train-config', dest='train_config', help='The path to the JSON training configuration file.')
@@ -70,13 +70,13 @@ elif not os.path.exists(args.model_config) :
             
         else :
             raise ValueError(f'Cannot locate model configuration file.')
-    
+        
 import torch
 from torch.utils.data import DataLoader
 from kan_utils.dataset import DataFrameToDataset, split_dataset
 from kan_utils.config import *
 from kan_utils.training import train
-from prepare_dataset import build_datset, expand_df_labels, normalize_dataset
+from prepare_dataset import get_prepared_dataset
 import extract_statistics
 import custom_callbacks
 
@@ -121,10 +121,12 @@ callbacks_arguments = weak_instantiate_all(train_config['callbacks_arguments'])
 
 # print(callbacks_arguments)
 
+# Load the prepared dataset using the treat_quality_as_categorical setting from config
+treat_quality_as_categorical = model_config.get('treat_quality_as_categorical', False)
 train_loader, val_loader, *_ = split_dataset(
     splits          = train_config['splits'],
     full_dataset    = DataFrameToDataset(
-        normalize_dataset(expand_df_labels(build_datset())),
+        get_prepared_dataset(treat_quality_as_categorical=treat_quality_as_categorical),
         input_cols  = model_config['input'],
         output_cols = model_config['output'],
     ),
