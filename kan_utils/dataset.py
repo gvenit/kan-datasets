@@ -38,8 +38,7 @@ def split_dataset(splits, full_dataset, seed = None):
     generator = torch.Generator()
     if seed is not None:
         generator.manual_seed(seed)
-        
-    return random_split(full_dataset, splits)
+    return random_split(full_dataset, splits, generator=generator)
     
 def smart_split_indices(splits: list[float], dataset, groups:dict[str, list] | dict[str, dict], seed = None):
     '''A method for randomly splitting indices for grouped data.
