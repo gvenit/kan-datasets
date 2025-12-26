@@ -97,7 +97,7 @@ model_config.update(
     object_to_config(
         model_config['model'],
         target_name       = 'model',
-        layers_hidden     = [
+        hidden_layers     = [
             len(model_config['input']),
             *([] if args.hidden_layers is None else args.hidden_layers),
             len(model_config['output']),
@@ -171,7 +171,7 @@ train_config['eval_criteria'] = {
         **object_to_config(
             OneHotMulticlassAccuracy, 
             target_name = 'categoriesLoss', 
-            average = 'micro'
+            average = 'micro' # NOTE: We want per-category accuracies so we should replace with 'none'
         ),
         **object_to_config(
             torchmetrics.R2Score, 
@@ -209,7 +209,7 @@ train_config['callbacks']['training_finished'].append(
 
 def build_test_dir(train_config, model_config, top_dir = None, test_version = None):
     pdir = os.path.join(
-        '_'.join([ str(_) for _ in model_config['model_kwargs']['layers_hidden']]),
+        '_'.join([ str(_) for _ in model_config['model_kwargs']['hidden_layers']]),
         '_'.join([
             'm', *[str(_) for _ in model_config['model_kwargs']['grid_min']],
             'M', *[str(_) for _ in model_config['model_kwargs']['grid_max']],
