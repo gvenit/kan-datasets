@@ -58,7 +58,7 @@ def get_summary(
 def get_summary(
     model: torch.nn.Module,
     input_data : torch.Tensor,
-    dest,
+    dest = None,
 ):
     model_summary = summary(
         model, 

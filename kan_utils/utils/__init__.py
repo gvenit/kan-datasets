@@ -11,6 +11,7 @@ def save_model(model: Module, fname:str, device = torch.device('cpu')):
         fname
     )
     model.to(device)
+    return fname
     
 def load_model(model: Module, fname:str, device = torch.device('cpu')):
     if os.path.splitext(fname)[-1] not in ('.pt','.pth'):

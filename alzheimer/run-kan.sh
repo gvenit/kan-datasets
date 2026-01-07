@@ -14,10 +14,10 @@ GRID_MAX=0.25               #  0.25
 SCALE=2                     #  2
 
 EPOCHS=1000
-BATCH=128
-LR=3e-4
+BATCH=1
+LR=3e-3
 OPTIMIZER="RMSprop"         # Adam RMSprop
-WEIGHT_DECAY=5e-4           # 1e-4
+WEIGHT_DECAY=1e-4           # 1e-4
 MOMENTUM=                   # 0.9
 MODE='RSWAFF'               # 'RSWAFF'
 RESIDUAL=                   # 0 / 1
@@ -141,8 +141,8 @@ if [ -z $img_hash ]; then
     img_hash="$THIS_DIR/create_img_enc_dec.py $CONFIGS --hash --export"
     print_verbose [EXEC] $img_hash
     img_hash=$(dry_run $img_hash)
-    print_verbose $img_hash
 fi
+print_verbose [INFO] Image Encoder-Decoder Hash: $img_hash
 
 if [ -z $tr1_hash ]; then
     CONFIGS=""
@@ -173,11 +173,11 @@ if [ -z $tr1_hash ]; then
         CONFIGS="$CONFIGS --test-version $TEST_VERSION"
     fi 
 
-    tr1_hash="$THIS_DIR/create_training_1.py $CONFIGS --hash --export"
+    tr1_hash="$THIS_DIR/create_tr_1.py $CONFIGS --hash --export"
     print_verbose [EXEC] $tr1_hash
     tr1_hash=$(dry_run $tr1_hash)
-    print_verbose $tr1_hash
 fi
+print_verbose [INFO] Training Stage 1 Hash: $tr1_hash
 
 if [ $dryrun -ge 1 ]; then
     test_dir=path/to/test/directory
@@ -188,8 +188,8 @@ CONFIGS="-t $tr1_hash -m $img_hash"
 if [ -n "$TEST_VERSION" ]; then
     CONFIGS="$CONFIGS --test-version $TEST_VERSION"
 fi 
-print_exec $THIS_DIR/train_img_enc_dec.py  $CONFIGS
+# print_exec $THIS_DIR/train_1.py $CONFIGS
 
-# print_exec $THIS_DIR/test_model.py -d $test_dir
+print_exec $THIS_DIR/test_1.py  $CONFIGS --epoch best
 
-# print_exec $THIS_DIR/extract_rslt_statistics.py -d $test_dir
+print_exec $THIS_DIR/extract_rslt_tr_1.py $CONFIGS --epoch best

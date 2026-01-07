@@ -35,24 +35,33 @@ class DataFrameToDataset (Dataset):
         #     return torch.tensor(data, dtype = torch.float32), torch.tensor(targ, dtype = torch.float32), key
         # return torch.tensor(data, dtype = torch.float32), torch.tensor(targ, dtype = torch.float32)
     
-def group(df : pd.DataFrame, label_dict = {}, indices = None):
+def group(df : pd.DataFrame, indices = None, labels = None, label_dict = {}):
     '''A grouper for datasets with categorical data.
     
     Args
     ----
     df: DataFrame
         The target dataframe
-    label_dict: dict[str, list]
-        The labels to apply the group
+    labels: list, Optional
+        The target columns
     indices: list, Optional
-    
+        If not specified, assume `df.reset_index().index`.
+    label_dict: dict[str, list], Optional
+        The labels to apply the group. If not specified, assume 
+        `label_dict = {
+            label : df[label].unique()
+                for label in labels
+        }`
+
     Returns
     -------
-    dict
-    
-    >>> group(df, {'Group_0' : [label_0_0, label_0_1, ...]',...})
-    
+    dict[str, dict] | dict[str, list[int]]
     '''
+    if labels is not None and len(label_dict) == 0:
+        label_dict = {
+            label : df[label].unique()
+                for label in labels
+        }
     if indices is None:
         indices = df.reset_index().index.to_list()
         

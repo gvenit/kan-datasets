@@ -85,29 +85,29 @@ def expand_df_labels(
         )
     return df[df.columns.sort_values()]  
 
-def _exe(file, input_dir) :
-    import subprocess
-    local_dir = os.path.splitext(file)[0].split('_')[:-1]
-    target_dir = os.path.join(__dataset_dir, 'slices', *local_dir)
-    os.makedirs(target_dir, exist_ok=True)
-    return subprocess.run(
-        ' '.join((
-            'med2image',
-            '-I', input_dir,
-            '-i', file,
-            # '-i', os.path.join(input_dir, file),
-            '-d', target_dir,
-            '-t jpg',
-            '-o sample',
-            '--reslice',
-            '--verbosity 0'
-        )),
-        shell = True,
-        text = True,
-    )
+# def _exe(file, input_dir) :
+#     import subprocess
+#     local_dir = os.path.splitext(file)[0].split('_')[:-1]
+#     target_dir = os.path.join(__dataset_dir, 'slices', *local_dir)
+#     os.makedirs(target_dir, exist_ok=True)
+#     return subprocess.run(
+#         ' '.join((
+#             'med2image',
+#             '-I', input_dir,
+#             '-i', file,
+#             # '-i', os.path.join(input_dir, file),
+#             '-d', target_dir,
+#             '-t jpg',
+#             '-o sample',
+#             '--reslice',
+#             '--verbosity 0'
+#         )),
+#         shell = True,
+#         text = True,
+#     )
     
 def build_dataset(force = False):
-    dataset_path = os.path.join(__dataset_dir,'slices')
+    dataset_path = os.path.join(__dataset_dir,'oasis')
     if force or not os.path.exists(dataset_path):
         os.environ['KAGGLE_CONFIG_DIR'] = TOP_DIR
         import kagglehub
@@ -117,19 +117,19 @@ def build_dataset(force = False):
         
         # Download Data
         kagglehub.whoami()
-        # kg.api.dataset_download_files("ninadaithal/oasis-1-shinohara", path=__dataset_dir, unzip=True, force=force)
+        kg.api.dataset_download_files("ninadaithal/oasis-1-shinohara", path=__dataset_dir, unzip=True, force=force)
         
-        input_dir = os.path.join(__dataset_dir, 'oasis', 'OASIS')
+        # input_dir = os.path.join(__dataset_dir, 'oasis', 'OASIS')
         
-        with mp.Pool(mp.cpu_count()) as pool:
-            with tqdm(os.listdir(input_dir)) as pbar:
+        # with mp.Pool(mp.cpu_count()) as pool:
+        #     with tqdm(os.listdir(input_dir)) as pbar:
                     
-                for file in pbar:
-                    pbar.set_postfix({'Current file' : file})
-                    result = pool.apply_async(_exe, (file, input_dir))
+        #         for file in pbar:
+        #             pbar.set_postfix({'Current file' : file})
+        #             result = pool.apply_async(_exe, (file, input_dir))
                     
-                result = result.get()
-                assert result is None, f"Result is {result}"
+        #         result = result.get()
+        #         assert result is None, f"Result is {result}"
         
     return get_dataset()
 
@@ -143,11 +143,7 @@ def get_dataset():
         
     input_dir = os.path.join(__dataset_dir, 'oasis', 'OASIS')
     img_paths = os.listdir(input_dir)
-    df['Path'] = [pth for pth in img_paths for idx in df.index if idx in pth]
-    df['Path'] = [
-        os.path.join(__dataset_dir, 'slices', *os.path.splitext(file)[0].split('_')[:-1])
-        for file in df['Path']
-    ]
+    df['Path'] = [os.path.join(input_dir,pth) for pth in img_paths for idx in df.index if idx in pth]
     df = df.drop(columns='Hand')
     return create_groups(df)
 

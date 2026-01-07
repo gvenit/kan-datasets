@@ -4,7 +4,7 @@
 # Configuration arguments
 # -- Leave empty for default values
 ########################################
-TEST_VERSION=HuberLoss-prob_abs_silu-smooth_0.1      # TestLoss  -linearly_normalized
+TEST_VERSION=Week-HuberLoss-prob_abs_silu-smooth_0.1      # TestLoss  -linearly_normalized
 SEED=42
 
 LAYERS="256 256"

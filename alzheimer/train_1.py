@@ -7,15 +7,17 @@ TOP_DIR = os.path.dirname(THIS_DIR)
 sys.path.append(TOP_DIR)
 
 parser = ArgumentParser(
-    description='Training script for the Ship Performance Clusterring Dataset.'
+    description='Training script for the 1st stage of the training scheme of Ship Performance Clusterring Dataset.'
 )
 
 parser.add_argument('-t', '--train-config', dest='train_config', help='The hash of the training configuration file.')
 parser.add_argument('-m', '--model-config', dest='model_config', help='The hash of the model configuration file.')
 parser.add_argument('-d', '--test-dir', dest='test_dir', default=os.path.join(THIS_DIR,'train'), help='The directory to be used as a top directory for training.')
-parser.add_argument('--test-version', dest='test_version', type=str, default=None)
+parser.add_argument('--test-version', dest='test_version', type=str, default='0')
 
 args = parser.parse_args()
+
+args.test_version = '_'.join(['test',args.test_version])
 
 # Check argument validity
 if  os.path.isdir(args.test_dir) or not os.path.exists(args.test_dir):
@@ -66,12 +68,12 @@ from torch.utils.data import DataLoader
 from kan_utils.config import *
 from kan_utils.dataset import smart_split_indices
 from kan_utils.training import train
-from kan_utils.utils import set_seed, load_model, save_model
+from kan_utils.utils import set_seed
 
 from prepare_dataset import build_dataset, expand_df_labels, normalize_dataset, get_groups
 from custom_dataset import AlzheimerDataset
+from build_model import *
 import extract_statistics
-from collections import OrderedDict
 
 device = torch.device(
     # 'cpu'
@@ -85,7 +87,10 @@ model_config = load_config(args.model_config)
 # Instantiate models
 img_enc = instantiate(model_config,'img_enc')
 img_dec = instantiate(model_config,'img_dec')
-model   = torch.nn.Sequential(OrderedDict([('img_enc', img_enc), ('img_dec', img_dec)]))
+model   = build_train_1_model(
+    img_enc = img_enc,
+    img_dec = img_dec,
+)
 print('-- Model :', model)
 img_enc.to(device)
 
@@ -165,7 +170,7 @@ try:
         optimizer           = optimizer,
         scheduler           = scheduler,
         epochs              = train_config['epochs'],
-        patience            = 100,
+        patience            = 25,
         top_dirname         = args.test_dir,
         device              = device,
         evaluate_training   = False,
@@ -177,28 +182,15 @@ except Exception as e:
     # Raise at the end of the "finally" block
     e_0 = e
 finally:
-    # Split best model state dict to separate files
-    pth         = os.path.join(args.test_dir, 'models', '{epoch}')
-    img_enc_pth = os.path.join(args.test_dir, 'img_enc', '{epoch}')
-    img_dec_pth = os.path.join(args.test_dir, 'img_dec', '{epoch}')
-    
-    print(pth)
-
-    for epoch in ('best', 'last'):
-        if os.path.exists(pth.format(epoch=epoch)):
-            load_model(model, pth.format(epoch=epoch))
-            save_model(model.modules['img_enc'], img_enc_pth.format(epoch=epoch))
-            save_model(model.modules['img_dec'], img_dec_pth.format(epoch=epoch))
-            os.remove(pth.format(epoch=epoch))
-            
-    os.removedirs(os.path.dirname(pth))
-
-    # Move history directory
-    if os.path.exists(os.path.join(args.test_dir, 'history.json')):
-        os.renames(
-            os.path.join(args.test_dir, 'history.json'),
-            os.path.join(args.test_dir, 'train_1_history.json'),
-        )
+    # Sort and update files in their corresponding folders
+    housekeep(
+        1,
+        model,
+        img_hash    = model_config['hash'], 
+        train_hash  = train_config['hash'],
+        top_dir     = args.test_dir,
+        test_version= args.test_version,
+    )
     
     # Re-raise errors if any 
     if e_0 is not None:

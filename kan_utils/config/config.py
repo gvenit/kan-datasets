@@ -6,11 +6,12 @@ import torchmetrics
 import copy
 from .. import metrics
 from .. import models
+from .. import callbacks
 from ..training import get_callable_basis
 
 
 def get_locals(*args):
-    locals_dict = {}
+    locals_dict = {**__builtins__}
     for module in args:
         locals_dict.update(**module.__dict__)
     return locals_dict
@@ -25,6 +26,7 @@ __cls_dict = get_locals(
     torchmetrics.image,
     metrics,
     models,
+    callbacks,
 )
 
 def get_default_model_config() -> dict:
@@ -77,7 +79,7 @@ def object_to_config(
         target_name = ''
     
     targ_dict = {
-        target_name             : obj,
+        target_name                 : obj,
     }
     if len(args):
         targ_dict.update({
@@ -99,7 +101,7 @@ def parse_config_val(val):
         return val
     elif isinstance(val, type) and issubclass(val, torch.nn.Module):
         return repr(val)
-    elif hasattr(val,'__iter__'):
+    elif hasattr(val,'__iter__') and not isinstance(val, type):
         return [parse_config_val(val_i) for val_i in val]
     else:
         return repr(val)

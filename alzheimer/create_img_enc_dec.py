@@ -15,7 +15,8 @@ parser.add_argument('--input-height', '--input_height', dest='input_height', typ
 parser.add_argument('--output-height', '--output_height', dest='output_height', type=int, default=64)
 parser.add_argument('--input-width', '--input_width', dest='input_width', type=int, default=64)
 parser.add_argument('--output-width', '--output_width', dest='output_width', type=int, default=64)
-parser.add_argument('--channels', dest='channels', type=int, default=1)
+parser.add_argument('--input-depth', '--input_depth', dest='input_depth', type=int, default=64)
+parser.add_argument('--output-depth','--output_depth', dest='output_depth', type=int, default=64)
 parser.add_argument('--layers', '--hidden-layers', dest='hidden_layers', action='extend', nargs="+")
 parser.add_argument('--num-grids', dest='num_grids', action='extend', nargs="+")
 parser.add_argument('--grid-min', dest='grid_min', action='extend', nargs="+")
@@ -38,6 +39,10 @@ from kan_utils.utils import expand_value
 # from custom_callbacks import *
 
 model_config = {}
+model_config['input_img_dim']  = [args.input_depth, args.input_height, args.input_width]
+model_config['output_img_dim'] = [args.output_depth, args.output_height, args.output_width]
+model_config['input']  = ['Path']
+model_config['output'] = ['Path']
 
 args.hidden_layers   = [args.input_width * args.input_height, *args.hidden_layers]
 args.num_grids       = expand_value(args.num_grids,       len(args.hidden_layers)-1)
@@ -52,15 +57,19 @@ model_config.update(
         input_data_dim      = -2,
         output_data_dim     = -1,
         **object_to_config(
-            FasterKAN,
+            torch.nn.Sequential,
+            torch.nn.Flatten,
+            object_to_config(
+                FasterKAN,
+                hidden_layers   = args.hidden_layers.copy(),
+                num_grids       = args.num_grids.copy(),
+                grid_min        = args.grid_min.copy(),
+                grid_max        = args.grid_max.copy(),
+                inv_denominator = args.inv_denominator.copy(),
+                mode            = args.mode,
+                residual        = args.residual,
+            ),
             target_name     ='model',
-            hidden_layers   = args.hidden_layers,
-            num_grids       = args.num_grids,
-            grid_min        = args.grid_min,
-            grid_max        = args.grid_max,
-            inv_denominator = args.inv_denominator,
-            mode            = args.mode,
-            residual        = args.residual,
         ),
 ))
 
@@ -83,24 +92,25 @@ model_config.update(
             torch.nn.Sequential,
             object_to_config(
                 FasterKAN,
-                hidden_layers   = args.hidden_layers,
-                num_grids       = args.num_grids,
-                grid_min        = args.grid_min,
-                grid_max        = args.grid_max,
-                inv_denominator = args.inv_denominator,
+                hidden_layers   = args.hidden_layers.copy(),
+                num_grids       = args.num_grids.copy(),
+                grid_min        = args.grid_min.copy(),
+                grid_max        = args.grid_max.copy(),
+                inv_denominator = args.inv_denominator.copy(),
                 mode            = args.mode,
                 residual        = args.residual,
             ),
             torch.nn.Sigmoid,
+            object_to_config(
+                Reshaper,
+                input_data_shape  = args.hidden_layers[-1:],
+                output_data_shape = model_config['output_img_dim'][1:],
+            ),
             target_name     ='model',
         ),
 ))
-model_config['input_img_dim']  = [args.input_width, args.input_height]
-model_config['output_img_dim'] = [args.output_width, args.output_height]
-model_config['input']  = ['Path']
-model_config['output'] = ['Path']
 
-def build_img_enc_dec_dir(args, top_dir = None, ):
+def build_img_enc_dec_dir(args, top_dir = None,):
     pdir = os.path.join(
         '_'.join([str(_) for _ in [args.input_width, args.input_height]]),
         '_'.join([str(_) for _ in [args.output_width, args.output_height]]),
@@ -114,15 +124,14 @@ def build_img_enc_dec_dir(args, top_dir = None, ):
         args.mode,
         str(args.residual)
     )
-    pdir = os.path.join('model_config', 'img_enc_dec', hashlib.sha256(pdir.encode()).hexdigest())
+    hashed = hashlib.sha1(pdir.encode()).hexdigest()
+    pdir = os.path.join('model_config', 'img_enc_dec', hashed)
     if top_dir is not None:
         pdir = os.path.join(top_dir,pdir)
-    return pdir
+    return pdir, hashed
 
-pdir = build_img_enc_dec_dir(args, top_dir=args.dest_top_dir)
+pdir, model_config['hash'] = build_img_enc_dec_dir(args, top_dir=args.dest_top_dir)
 
-model_config['hash'] = os.path.basename(pdir)
-    
 if args.hash:
     print(model_config['hash'])
 

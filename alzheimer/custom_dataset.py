@@ -1,10 +1,13 @@
 from typing import Literal
 import torch
 from torch.utils.data import Dataset, random_split
+import numpy as np
 import pandas as pd
-import cv2
+import nibabel as nib
 import albumentations as A
 import os
+
+global_pool = torch.multiprocessing.get_context().Pool(processes=torch.multiprocessing.cpu_count())
 
 class AlzheimerDataset (Dataset): 
     def __init__(
@@ -16,7 +19,6 @@ class AlzheimerDataset (Dataset):
         output_img_dims,
         return_key = False, 
         path_col = 'Path',
-        flags = (cv2.IMREAD_UNCHANGED, ),
         orientation : Literal['x','y','z','fixed','random'] = 'fixed',
     ):
         super().__init__()
@@ -42,43 +44,20 @@ class AlzheimerDataset (Dataset):
             
         self.input_img_dims  = input_img_dims
         self.output_img_dims = output_img_dims
-        self.flags           = flags
         self.orientation     = orientation
             
-        self.input_transform = A.Compose([
-                A.Resize(*self.input_img_dims),
-                A.ToTensorV2(),
+        self.transform = A.Compose([
+                A.Normalize(normalization='min_max'),
+                A.RandomCrop3D(self.input_img_dims),
+                A.CubicSymmetry(),
+                A.CoarseDropout3D(p=0.5),
             ], telemetry=False
         )
-        self.output_transform = A.Compose([
-                A.Resize(*self.output_img_dims),
-                A.ToTensorV2(),
-            ], telemetry=False
-        )
-        
-    def __len__(self) :
-        return len(self.df)
     
-    def return_key(self, return_key = True):
-        self._return_key = return_key
+    def get_keys(self, index):
+        return [self.index[idx] for idx in index]
     
-    def __get_input_image(self, pth):
-        with cv2.imread(pth, *self.flags) as fr:
-            if self.pth_isin_in:
-                img = self.input_transform(fr)
-            else :
-                img = None
-        return img
-    
-    def __get_output_image(self, pth):
-        with cv2.imread(pth, *self.flags) as fr:
-            if self.pth_isin_out:
-                img = self.output_transform(fr)
-            else :
-                img = None
-        return img
-    
-    def __get_image_pack(self, pth):
+    def __get_orientation(self):
         if self.orientation in ('x','y','z',):
             in_axis = out_axis = self.orientation
         else :
@@ -88,21 +67,29 @@ class AlzheimerDataset (Dataset):
                 in_axis  = ['x','y','z'][torch.randint(0,3,(1,))]
                 out_axis = ['x','y','z'][torch.randint(0,3,(1,))]
                 
+        return in_axis, out_axis
+        
+    def __len__(self) :
+        return len(self.df)
+    
+    def return_key(self, return_key = True):
+        self._return_key = return_key
+    
+    @classmethod
+    def __get_image(cls, pth):
+        img = nib.load(pth)
+        return np.asarray(img.get_fdata(), dtype=img.header.get_data_dtype())
+    
+    def __get_image_pack(self, pth, in_axis, out_axis):
+        img = self.__get_image(pth)
+        img = self.transform(volume = img,)['volume']
         if self.pth_isin_in:
-            in_pth = os.listdir(os.path.join(pth, in_axis))
-            in_img = torch.stack([
-                self.__get_input_image(os.path.join(pth, in_axis, in_pth_i))
-                    for in_pth_i in in_pth
-            ])
+            in_img = torch.as_tensor(img).float()
         else :
             in_img = None
             
         if self.pth_isin_out:
-            out_pth = os.listdir(os.path.join(pth, out_axis))
-            out_img = torch.stack([
-                self.__get_output_image(os.path.join(pth, out_axis, out_pth_i))
-                    for out_pth_i in out_pth
-            ])
+            out_img = torch.as_tensor(img).float()
         else :
             out_img = None
             
@@ -130,15 +117,19 @@ class AlzheimerDataset (Dataset):
         return data, targ, *key
     
     def __getitems__(self, index):
-        key  = [self.index[idx] for idx in index]
-        data = self.df.iloc[index, self.i_input_cols].values.tolist()
-        targ = self.df.iloc[index, self.i_output_cols].values.tolist()
+        if len(self.i_input_cols) > 0:
+            data = self.df.iloc[index, self.i_input_cols].values.tolist()
+            
+        if len(self.i_output_cols) > 0:
+            targ = self.df.iloc[index, self.i_output_cols].values.tolist()
         # print(data, targ)
         
         if self.pth_isin_in or self.pth_isin_out:
             pth = self.df.iloc[index, self.i_path_col]
             
-            collect = [self.__get_image_pack(pth_i) for pth_i in pth]
+            in_axis, out_axis = self.__get_orientation()
+            
+            collect = [self.__get_image_pack(pth_i, in_axis, out_axis) for pth_i in pth]
             
             if self.pth_isin_in:
                 in_img = torch.stack([
@@ -151,18 +142,32 @@ class AlzheimerDataset (Dataset):
         
         output_args = ()
         
+        out_data = ()
         if self.pth_isin_in:
-            output_args += (torch.tensor(data).float(), in_img.float()),
-        else :
-            output_args +=  torch.tensor(data).float(),
+            out_data += in_img.float(), 
+        
+        if len(self.i_input_cols) > 0:
+            out_data +=  torch.tensor(data).float(),
             
-        if self.pth_isin_out:
-            output_args += (torch.tensor(targ).float(), out_img.float()),
+        if len(out_data) == 1:
+            output_args += out_data
         else :
-            output_args +=  torch.tensor(targ).float(),
+            output_args += out_data,
+            
+        out_targ = ()
+        if self.pth_isin_out:
+            out_targ += out_img.float(), 
+        
+        if len(self.i_input_cols) > 0:
+            out_targ +=  torch.tensor(targ).float(),
+            
+        if len(out_targ) == 1:
+            output_args += out_targ
+        else :
+            output_args += out_targ,
             
         if self._return_key:
-            output_args +=  key,
+            output_args +=  torch.as_tensor(index),
             
         return output_args
     

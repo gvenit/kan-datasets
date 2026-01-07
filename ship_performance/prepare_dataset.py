@@ -9,7 +9,7 @@ import pandas as pd
 import numpy as np
 import json
 
-__dataset_dir = os.path.join(THIS_DIR,'dataset/')
+__dataset_dir = os.path.join(THIS_DIR,'dataset')
 
 def create_labels(
     df : pd.DataFrame,
@@ -97,6 +97,12 @@ def build_dataset(force = False):
 def get_dataset():
     dataset_path = os.path.join(__dataset_dir,'Ship_Performance_Dataset.csv')
     df = pd.read_csv(dataset_path)
+    
+    df['Date'] = pd.to_datetime(df['Date'])
+    df['Week'] = df['Date'].apply(
+            lambda row : row.week
+        )
+    df = df.drop(columns='Date')
     for col in df.dtypes[df.dtypes == 'object'].index:
         if col == 'Date':
             continue
@@ -112,6 +118,7 @@ def normalize_dataset(
     label_path = os.path.join(__dataset_dir, 'normalize.json')
     if not os.path.exists(os.path.join(__dataset_dir, 'statistics.csv')):
         import extract_statistics
+        extract_statistics.extract_statistics(df, __dataset_dir)
         
     stats = pd.read_csv(os.path.join(__dataset_dir, 'statistics.csv'), index_col='index')
     # print(stats)
@@ -124,8 +131,12 @@ def normalize_dataset(
         big_values   = label_dict['big_values']
         mid_values   = label_dict['mid_values']
         low_values   = label_dict['low_values']
-    else :
         
+        check  = np.isin(great_values + big_values + mid_values + low_values, df.columns).all()
+        if not check:
+            os.remove(label_path) 
+        
+    if not os.path.exists(label_path):
         great_values = stats[stats['mean'] > 5e4].index.tolist()
         # print(great_values)
         big_values = stats[stats['max'] > 100].index
@@ -174,6 +185,8 @@ def normalize_dataset(
 if __name__ == '__main__':
     # Download latest version
     df = build_dataset()
+    
+    print('Columns: ', df.columns.tolist())
 
     label_dict = create_labels(df, force=True)
         

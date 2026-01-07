@@ -8,7 +8,7 @@ TOP_DIR = os.path.dirname(THIS_DIR)
 sys.path.append(TOP_DIR)
 
 parser = ArgumentParser(
-    description='Training script for the Ship Performance Clusterring Dataset.'
+    description='Testing script for the Ship Performance Clusterring Dataset.'
 )
 
 parser.add_argument('-t', '--train-config', dest='train_config', help='The path to the JSON training configuration file.')
