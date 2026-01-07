@@ -7,11 +7,7 @@
 TEST_VERSION=Week-HuberLoss-prob_abs_silu-smooth_0.1      # TestLoss  -linearly_normalized
 SEED=42
 
-LAYERS="256 256"
-NUM_GRIDS="4"               #  4
-GRID_MIN=-1.25              # -1.2
-GRID_MAX=0.25               #  0.25
-SCALE=2                     #  2
+LAYERS="512 512"
 
 EPOCHS=10000
 BATCH=128
@@ -103,28 +99,6 @@ CONFIGS=""
 if [ -n "$LAYERS" ]; then
     CONFIGS="$CONFIGS --layers $LAYERS"
 fi 
-if [ -n "$NUM_GRIDS" ]; then
-    CONFIGS="$CONFIGS --num-grids $NUM_GRIDS"
-fi 
-if [ -n "$GRID_MIN" ]; then
-    CONFIGS="$CONFIGS --grid-min $GRID_MIN"
-fi 
-if [ -n "$GRID_MAX" ]; then
-    CONFIGS="$CONFIGS --grid-max $GRID_MAX"
-fi 
-if [ -n "$SCALE" ]; then
-    CONFIGS="$CONFIGS --scale $SCALE"
-fi 
-
-if [ -n "$MODE" ]; then
-    CONFIGS="$CONFIGS --mode $MODE"
-
-    if [ -n "$TEST_VERSION" ]; then
-        TEST_VERSION="${MODE}-${TEST_VERSION}"
-    else
-        TEST_VERSION=$MODE
-    fi
-fi 
 
 if [[ -n "$RESIDUAL" ]] && [[ "$RESIDUAL" -gt 0 ]]; then
     CONFIGS="$CONFIGS --residual"
@@ -164,8 +138,8 @@ if [ -n "$TEST_VERSION" ]; then
     CONFIGS="$CONFIGS --test-version $TEST_VERSION"
 fi 
 
-print_verbose [EXEC] $THIS_DIR/create_configs_kan.py $CONFIGS --export
-test_dir=$(dry_run $THIS_DIR/create_configs_kan.py "${CONFIGS}" --export)
+print_verbose [EXEC] $THIS_DIR/create_configs_mlp.py $CONFIGS --export
+test_dir=$(dry_run $THIS_DIR/create_configs_mlp.py "${CONFIGS}" --export)
 
 print_verbose $test_dir
 
