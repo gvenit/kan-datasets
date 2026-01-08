@@ -63,7 +63,8 @@ def group(df : pd.DataFrame, indices = None, labels = None, label_dict = {}):
                 for label in labels
         }
     if indices is None:
-        indices = df.reset_index().index.to_list()
+        # df = df.copy().reset_index()
+        indices = df.index.to_list()
         
         # Reverse dictionary key order
         dict_label = {}
@@ -81,14 +82,15 @@ def group(df : pd.DataFrame, indices = None, labels = None, label_dict = {}):
     
     key, labels = label_dict.popitem()
     # print(key, labels)
-    df = df.iloc[indices]
+    df = df.loc[indices]
     subgroup = {
         f'{key} ({label})' : group(
             df,
-            label_dict.copy(),(
+            indices     = (
                 df[df[key].isna()] if isinstance(label, float) and np.isnan(label) 
                     else df[df[key] == label]
-            ).index.to_list()
+            ).index.to_list(),
+            label_dict  = label_dict.copy(),
         )
             for label in labels 
     }

@@ -171,6 +171,7 @@ history = train(
     top_dirname         = args.test_dir,
     device              = device,
     evaluate_training   = False,
+    saving_steps        = 50,
     show_pbar           = 'external',
     callbacks           = callbacks,
     callbacks_arguments = callbacks_arguments,

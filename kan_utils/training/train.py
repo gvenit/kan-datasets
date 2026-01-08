@@ -26,10 +26,53 @@ def train(
     top_dirname = './train',
     device = torch.device('cpu'),
     evaluate_training = False,
+    saving_steps : int = 1,
     show_pbar : Literal[None, 'external','internal'] = 'external',
     callbacks = get_callable_basis(),
     callbacks_arguments : dict[str, Any] = {},
 ) -> dict[str,dict[int,dict[str,Union[float,list[float]]]]]:
+    '''
+    A function to train a PyTorch model.
+    
+    :param model: The model to be trained.
+    :type model: Module
+    :param train_dataloader: The dataloader for training data.
+    :type train_dataloader: DataLoader
+    :param eval_dataloader: The dataloader for evaluation data.
+    :type eval_dataloader: DataLoader
+    :param criterion: The loss function to be used.
+    :type criterion: Callable[[torch.Tensor], torch.Tensor]
+    :param eval_criteria: The evaluation criteria to be used.
+    :type eval_criteria: dict[str: Callable[[torch.Tensor], torch.Tensor]]
+    :param optimizer: The optimizer to be used.
+    :type optimizer: Optimizer
+    :param scheduler: The learning rate scheduler to be used.
+    :type scheduler: LRScheduler
+    :param epochs: The number of epochs to train for.
+    :type epochs: int
+    :param patience: The number of epochs to wait before early stopping.
+    :type patience: int
+    :param history: The training history prior to this training session.
+    :type history: dict[str, dict[int, dict[str, Union[float, list[float]]]]]
+    :param start_epoch: The starting epoch number.
+    :type start_epoch: int
+    :param top_dirname: The top directory to save training results.
+    :type top_dirname: str
+    :param device: The device to be used for training.
+    :type device: torch.device
+    :param evaluate_training: Whether to evaluate on training data after each epoch.
+    :type evaluate_training: bool
+    :param saving_steps: The interval (in epochs) to save the model.
+    :type saving_steps: int
+    :param show_pbar: Whether to show progress bars. `external` shows an outer progress bar for epochs, `internal` shows an inner progress bar for iterations.
+    :type show_pbar: Literal[None, 'external', 'internal']
+    :param callbacks: Callback functions to be called at various stages of training.
+    :type callbacks: dict[str, list[Callable[..., None]]]
+    :param callbacks_arguments: Additional arguments to be passed to the callback functions.
+    :type callbacks_arguments: dict[str, Any]
+    :return: The training history including the new training session.
+    :rtype: dict[str, dict[int, dict[str, float | list[float]]]]
+    '''
     best_loss = float('inf')
     val_loss = float('inf')
     if len(history) == 0:
@@ -228,8 +271,9 @@ def train(
                 elif show_pbar == 'external':
                     pbar_epoch.set_description(descr.format(epoch=epoch, tr_loss=tr_loss, val_loss=val_loss, best_loss=best_loss))
                     
-                save_model(model, os.path.join(model_dirname,'last'), device)
-                save_dict(history, os.path.join(top_dirname,'history'))
+                if saving_steps > 0 and (epoch % saving_steps == 0):
+                    save_model(model, os.path.join(model_dirname,'last'), device)
+                    save_dict(history, os.path.join(top_dirname,'history'))
                 
                 if best_loss > val_loss:
                     best_loss = val_loss
@@ -293,6 +337,8 @@ def train(
         for callback in callbacks['training_finished']:
             callback(**loc_kwargs)
             
+        save_model(model, os.path.join(model_dirname,'last'), device)
+        save_dict(history, os.path.join(top_dirname,'history'))
         raise e
     
     loc_kwargs = {
@@ -312,5 +358,10 @@ def train(
     loc_kwargs.update(callbacks_arguments)
     for callback in callbacks['training_finished']:
         callback(**loc_kwargs)
+        
+    
+    if saving_steps < 1 or (epoch % saving_steps != 0):
+        save_model(model, os.path.join(model_dirname,'last'), device)
+        save_dict(history, os.path.join(top_dirname,'history'))
         
     return history

@@ -225,6 +225,62 @@ class RSFAuto(nn.Module):
         diff = (x[..., None] - self.grid).mul(self.inv_denominator) 
         return self.rbf(diff)
 
+class DynamicRSFAuto(nn.Module):
+    """
+    Args:
+        train_grid (bool): Whether to update grid points during training
+        train_inv_denominator (bool): Whether to update inv_denominator during training
+        grid_min (float): Minimum value for grid points
+        grid_max (float): Maximum value for grid points
+        num_grids (int): Number of grid points to use
+        inv_denominator (float): Initial value for inverse denominator parameter
+    
+    Attributes:
+        grid (nn.Parameter): Learnable grid points evenly spaced from grid_min to grid_max
+        inv_denominator (nn.Parameter): Learnable inverse denominator controlling RBF width
+    """
+    def __init__(
+        self,
+        input_dim: int,
+        num_grids: int,
+        mode : Literal['RSWAFF','tanh','tanh2','gaussian', 'sigmoid','square','triangle','sample'] = 'RSWAFF'
+    ):
+        super(DynamicRSFAuto,self).__init__()
+        self.params_linear = nn.Linear(input_dim, num_grids + 1, bias=USE_BIAS_ON_LINEAR)
+        
+        self.mode = mode
+        if   self.mode == 'RSWAFF':
+            self.rbf = lambda x : 1 - torch.nn.functional.tanh(x) ** 2
+        elif self.mode == 'tanh':
+            self.rbf = lambda x : torch.nn.functional.tanh(x)
+        elif self.mode == 'tanh2':
+            self.rbf = lambda x : torch.nn.functional.tanh(x) ** 2
+        elif self.mode == 'gaussian':
+            self.rbf = lambda x : torch.exp(-(x**2))
+        elif self.mode == 'sigmoid':
+            self.rbf = lambda x : torch.nn.functional.sigmoid(x)
+        # elif self.mode == 'square':
+        #     self.rbf = lambda x, threshold=0.5 : torch.where(x.abs() < threshold, 1., 0.)
+        # elif self.mode == 'triangle':
+        #     self.rbf = lambda x, threshold=0.5 : torch.where(x.abs() < threshold, -x, 0.)
+        elif self.mode == 'sample':
+            self.rbf = lambda x, guard=1e-8 : torch.sin(x+guard) / (x+guard)
+        else :
+            raise ValueError(f"Mode is not implemented; got '{self.mode}'")
+
+    def forward(self, x):
+        """
+        Args:
+            x (torch.Tensor): Input tensor [batch_size, input_dim]
+            
+        Returns:
+            torch.Tensor: Transformed tensor [batch_size, input_dim, num_grids]
+        """
+        params = self.params_linear(x).unsqueeze(-2)
+        grid, scale = params.split([self.params_linear.out_features - 1, 1], dim=-1)
+        diff = (x[..., None] - grid).mul(scale) 
+        return self.rbf(diff)
+
 class FasterKANLayer(nn.Module):
     """
     A single layer in the FasterKAN architecture.
@@ -283,6 +339,60 @@ class FasterKANLayer(nn.Module):
         output = self.linear(spline_basis)
         return output
 
+class DynamicFasterKANLayer(nn.Module):
+    """
+    A single layer in the FasterKAN architecture.
+    
+    The layer applies the following sequence:
+    1. Transform inputs using Radial Spline Functions (RSF)
+    2. Apply dropout with rate based on grid count (1-0.75^num_grids)
+    3. Apply linear transformation to the outputs
+    
+    Args:
+        train_grid (bool): Whether to update grid points during training
+        train_inv_denominator (bool): Whether to update inv_denominator during training
+        input_dim (int): Dimensionality of input features
+        output_dim (int): Dimensionality of output features
+        grid_min (float): Minimum value for grid points
+        grid_max (float): Maximum value for grid points
+        num_grids (int): Number of grid points to use
+        inv_denominator (float): Initial value for inverse denominator parameter
+    
+    Attributes:
+        rbf (RSF): Radial Spline Function module
+        drop (nn.Dropout): Dropout layer with adaptive rate
+        linear (nn.Linear): Linear transformation without bias
+    """
+    def __init__(
+        self,
+        input_dim: int,
+        output_dim: int,
+        num_grids: int,
+        mode : Literal['RSWAFF','tanh','tanh2','gaussian', 'sigmoid','square','triangle','sample'] = 'RSWAFF',
+        **kwargs
+    ) -> None:
+        super(DynamicFasterKANLayer,self).__init__()
+
+        self.rbf = DynamicRSFAuto(input_dim, num_grids, mode=mode)
+        self.linear = nn.Linear(input_dim * num_grids, output_dim, bias=USE_BIAS_ON_LINEAR) 
+        self.drop = nn.Dropout(0.5) # NOTE: Dropout rate increases with num_grids
+        # self.drop = nn.Dropout(1-0.9**(num_grids)) # NOTE: Dropout rate increases with num_grids
+
+    def forward(self, x):
+        """
+        Args:
+            x (torch.Tensor): Input tensor [batch_size, input_dim]
+            
+        Returns:
+            torch.Tensor: Output tensor [batch_size, output_dim]
+        """
+        batch_size = x.size(0)
+        x = x.view(batch_size, -1)
+        spline_basis = self.rbf(x).view(batch_size, -1)
+        spline_basis = self.drop(spline_basis)
+        output = self.linear(spline_basis)
+        return output
+
 # @torch.compile
 class FasterKAN(nn.Module):
     """
@@ -317,7 +427,8 @@ class FasterKAN(nn.Module):
         grid_max: float,
         inv_denominator: float,
         mode : Literal['RSWAFF','tanh','tanh2','gaussian', 'sigmoid','square','triangle','sample'] = 'RSWAFF',
-        residual : list[bool] = False
+        residual : list[bool] = False,
+        dynamic : bool = False,
     ):
         super(FasterKAN, self).__init__()
 
@@ -329,6 +440,11 @@ class FasterKAN(nn.Module):
         grid_max        = expand_value(grid_max,        len(hidden_layers)-1)
         inv_denominator = expand_value(inv_denominator, len(hidden_layers)-1)
         residual        = expand_value(residual,        len(hidden_layers)-1)
+        
+        if dynamic :
+            LayerClass = DynamicFasterKANLayer
+        else :
+            LayerClass = FasterKANLayer
         
         self.residual   = []
         for _iter, residual_i in enumerate(residual):
@@ -342,7 +458,7 @@ class FasterKAN(nn.Module):
                 self.residual.append(False)
         
         self.layers = nn.ModuleList([
-            FasterKANLayer(
+            LayerClass(
                 train_grid=self.train_grid,
                 train_inv_denominator=self.train_inv_denominator,
                 input_dim=in_dim, 

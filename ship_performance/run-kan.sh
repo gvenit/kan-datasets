@@ -14,13 +14,14 @@ GRID_MAX=0.25               #  0.25
 SCALE=2                     #  2
 
 EPOCHS=10000
-BATCH=128
+BATCH=1024
 LR=3e-4
 OPTIMIZER="RMSprop"         # Adam RMSprop
 WEIGHT_DECAY=5e-4           # 1e-4
 MOMENTUM=                   # 0.9
 MODE='RSWAFF'                # 'RSWAFF'
 RESIDUAL=                   # 0 / 1
+DYNAMIC=                    # 0 / 1
 
 ########################################
 # DO NOT ALTER BEYOND THIS POINT
@@ -56,6 +57,7 @@ usage () {
     echo "      -h                     Prints out help"
     echo "      -s, --seed             Change the seed"
     echo "      --residual             Set the residual flag"
+    echo "      --dynamic              Set the dynamic flag"
     echo "      -d, --dryrun           Dry run of the script"
     echo "      -v, --verbose          Prints the to be executed commands"
     echo "      -p, --purge            Purges any existing output files before generating them"
@@ -83,6 +85,9 @@ while [ "$#" -gt 0 ] ; do
             shift ;;
         --residual)
             RESIDUAL=1
+            shift ;;
+        --dynamic)
+            DYNAMIC=1
             shift ;;
         -*|--*=)  # unsupported flags
             echo "Error: Unsupported flag $1" >&2
@@ -131,6 +136,15 @@ if [[ -n "$RESIDUAL" ]] && [[ "$RESIDUAL" -gt 0 ]]; then
 
     if [ -n "$TEST_VERSION" ]; then
         TEST_VERSION="res-${TEST_VERSION}"
+    else
+        TEST_VERSION=$MODE
+    fi
+fi 
+if [[ -n "$DYNAMIC" ]] && [[ "$DYNAMIC" -gt 0 ]]; then
+    CONFIGS="$CONFIGS --dynamic"
+
+    if [ -n "$TEST_VERSION" ]; then
+        TEST_VERSION="dyn-${TEST_VERSION}"
     else
         TEST_VERSION=$MODE
     fi

@@ -20,6 +20,7 @@ parser.add_argument('--grid-max', dest='grid_max', action='extend', nargs="+")
 parser.add_argument('--scale','--inv_denominator', dest='scale', action='extend', nargs="+")
 parser.add_argument('--mode', dest='mode', type=str, default='RSWAFF')
 parser.add_argument('--residual', dest='residual', action='store_true')
+parser.add_argument('--dynamic', dest='dynamic', action='store_true')
 parser.add_argument('--patience', dest='patience', default=100)
 parser.add_argument('--epochs', dest='epochs', default=500)
 parser.add_argument('--batch', '--batch-size', dest='batch_size', type=int, default=16)
@@ -62,6 +63,7 @@ model_config.update(
         inv_denominator   = args.scale,
         mode              = args.mode,
         residual          = args.residual,
+        dynamic           = args.dynamic,
     )
 )
 categories = pd.unique(pd.Series(df.columns).apply(lambda row: row[:row.find('_Is_')]))

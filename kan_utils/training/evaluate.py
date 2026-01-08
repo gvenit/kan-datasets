@@ -100,16 +100,22 @@ def evaluate(
             callback(**loc_kwargs)
             
         for data, target, *key in pbar:
-            if isinstance(data, tuple):
-                data = (_.to(device) for _ in data)
+            if isinstance(data, (list, tuple)):
+                data = tuple(_.to(device) for _ in data)
             else :
-                data = data.to(device)
-                
-            if isinstance(data, tuple):
-                target = (_.to(device) for _ in target)
+                try:
+                    data = data.to(device)
+                except:
+                    print('Data to device failed:', data)
+
+            if isinstance(data, (list, tuple)):
+                target = tuple(_.to(device) for _ in target)
             else :
-                target = target.to(device)
-            
+                try:
+                    target = target.to(device)
+                except:
+                    print('Target to device failed:', target)
+
             if len(key) > 0:
                 key = key[0]
                 if isinstance(key, torch.Tensor):
@@ -194,9 +200,10 @@ def evaluate(
         rslt_path = os.path.join(os.path.dirname(checkpoint_path), "rslt.csv" if epoch is None else f"{epoch}.csv")
         
         os.makedirs(os.path.dirname(rslt_path), exist_ok=True)
+        # print(target.shape, prediction.shape)
         
-        prediction = prediction.cpu()
-        target = target.cpu()
+        prediction = prediction.cpu().flatten(1)
+        target = target.cpu().flatten(1)
         
         df  = pd.DataFrame({
             'Index' : keys,
