@@ -79,9 +79,16 @@ def housekeep(
     test_version = 'test_0',
     device = torch.device('cpu'),
 ) :
+    tr_subdir = get_training_subdir(
+        training_stage  = training_stage,
+        img_hash        = img_hash, 
+        train_hash      = train_hash,
+        top_dir         = top_dir,
+        test_version    = test_version,
+    )
     if training_stage == 1 :
         # Split best model state dict to separate files
-        pth = os.path.join(top_dir, 'models', '{epoch}')
+        pth = os.path.join(tr_subdir, 'models', '{epoch}')
         
         for epoch in os.listdir(os.path.dirname(pth)):
             try :
@@ -103,11 +110,11 @@ def housekeep(
                 
         os.removedirs(os.path.dirname(pth))
 
-        # Move history directory
-        if os.path.exists(os.path.join(top_dir, 'history.json')):
-            os.renames(
-                os.path.join(top_dir, 'history.json'),
-                os.path.join(top_dir, 'train_1', img_hash, train_hash, test_version, 'history.json'),
-            )
+        # # Move history directory
+        # if os.path.exists(os.path.join(top_dir, 'history.json')):
+        #     os.renames(
+        #         os.path.join(top_dir, 'history.json'),
+        #         os.path.join(top_dir, 'train_1', img_hash, train_hash, test_version, 'history.json'),
+        #     )
     
         

@@ -5,6 +5,7 @@ THIS_DIR = os.path.dirname(__file__)
 TOP_DIR = os.path.dirname(THIS_DIR)
 sys.path.append(TOP_DIR)
 
+# import set_environment
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -72,7 +73,7 @@ def extract_statistics(df, output_dir = None):
     stats = pd.DataFrame(stats).set_index('index').astype(float)
 
     if output_dir is not None:
-        stats.to_csv(os.path.join(output_dir,'normalized_statistics.csv'))
+        stats.to_csv(os.path.join(output_dir,'normalized_statistics.csv'), encoding=os.environ['DEFAULT_ENCODING'])
     else :
         print('Normalized statistics')
         print(stats)

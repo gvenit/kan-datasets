@@ -7,20 +7,22 @@
 TEST_VERSION=               # TestLoss  -linearly_normalized
 SEED=42
 
-LAYERS="256 256"
-NUM_GRIDS="4"               #  4
-GRID_MIN=-1.25              # -1.2
-GRID_MAX=0.25               #  0.25
-SCALE=2                     #  2
+LAYERS="128 128"            # "4096"
+NUM_GRIDS="5"               #  4
+GRID_MIN=-1                 # -1.2
+GRID_MAX=1                  #  0.25
+SCALE=1.5                   #  2
+MODE='RSWAFF'               # 'RSWAFF' 'sigmoid'
+RESIDUAL=1                  # 0 / 1
+DYNAMIC=                    # 0 / 1
 
 EPOCHS=1000
-BATCH=1
-LR=3e-3
-OPTIMIZER="RMSprop"         # Adam RMSprop
-WEIGHT_DECAY=1e-4           # 1e-4
+PATIENCE=
+BATCH=8
+LR=5e-4
+OPTIMIZER="Adam"            # Adam RMSprop
+WEIGHT_DECAY=5e-5           # 1e-4
 MOMENTUM=                   # 0.9
-MODE='RSWAFF'               # 'RSWAFF'
-RESIDUAL=                   # 0 / 1
 
 ########################################
 # DO NOT ALTER BEYOND THIS POINT
@@ -59,6 +61,7 @@ usage () {
     echo "      -h                     Prints out help"
     echo "      -s, --seed             Change the seed"
     echo "      --residual             Set the residual flag"
+    echo "      --dynamic              Set the dynamic flag"
     echo "      --img                  If specified, the hash value of the image encoder/decoder model configuration"
     echo "      --tr-1                 If specified, the hash value of the first training"
     echo "      -d, --dryrun           Dry run of the script"
@@ -96,6 +99,9 @@ while [ "$#" -gt 0 ] ; do
             shift ;;
         --residual)
             RESIDUAL=1
+            shift ;;
+        --dynamic)
+            DYNAMIC=1
             shift ;;
         -*|--*=)  # unsupported flags
             echo "Error: Unsupported flag $1" >&2
@@ -138,6 +144,13 @@ if [ -z $img_hash ]; then
         CONFIGS="$CONFIGS --residual"
     fi 
 
+    if [[ -n "$DYNAMIC" ]] && [[ "$DYNAMIC" -gt 0 ]]; then
+        CONFIGS="$CONFIGS --dynamic"
+    fi 
+    if [ -n "$TEST_VERSION" ]; then
+        CONFIGS="$CONFIGS --test-version $TEST_VERSION"
+    fi 
+
     img_hash="$THIS_DIR/create_img_enc_dec.py $CONFIGS --hash --export"
     print_verbose [EXEC] $img_hash
     img_hash=$(dry_run $img_hash)
@@ -148,6 +161,9 @@ if [ -z $tr1_hash ]; then
     CONFIGS=""
     if [ -n "$EPOCHS" ]; then
         CONFIGS="$CONFIGS --epochs $EPOCHS"
+    fi
+    if [ -n "$PATIENCE" ]; then
+        CONFIGS="$CONFIGS --patience $PATIENCE"
     fi
     if [ -n "$BATCH" ]; then
         CONFIGS="$CONFIGS --batch $BATCH"
@@ -188,7 +204,7 @@ CONFIGS="-t $tr1_hash -m $img_hash"
 if [ -n "$TEST_VERSION" ]; then
     CONFIGS="$CONFIGS --test-version $TEST_VERSION"
 fi 
-# print_exec $THIS_DIR/train_1.py $CONFIGS
+print_exec $THIS_DIR/train_1.py $CONFIGS
 
 print_exec $THIS_DIR/test_1.py  $CONFIGS --epoch best
 

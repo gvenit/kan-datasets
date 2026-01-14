@@ -96,25 +96,26 @@ class AlzheimerDataset (Dataset):
         return in_img, out_img
     
     def __getitem__(self, index):
-        data, targ, *key = self.__getitems__([index,])
+        # data, targ, *key = self.__getitems__([index,])
         
-        if isinstance(data, tuple):
-            data = (
-                _.squeeze(0) for _ in data
-            )
-        else :
-            data = data.squeeze(0)
+        # if isinstance(data, tuple):
+        #     data = tuple(
+        #         _.squeeze(0) for _ in data
+        #     )
+        # else :
+        #     data = data.squeeze(0)
             
-        if isinstance(targ, tuple):
-            targ = (
-                _.squeeze(0) for _ in targ
-            )
-        else :
-            targ = targ.squeeze(0)
-        key = (
-            _[0] for _ in key
-        )
-        return data, targ, *key
+        # if isinstance(targ, tuple):
+        #     targ = tuple(
+        #         _.squeeze(0) for _ in targ
+        #     )
+        # else :
+        #     targ = targ.squeeze(0)
+        # key = tuple([
+        #     _[0] for _ in key
+        # ])
+        # return data, targ, *key
+        return self.__getitems__([index,])[0]
     
     def __getitems__(self, index):
         if len(self.i_input_cols) > 0:
@@ -140,35 +141,33 @@ class AlzheimerDataset (Dataset):
                     collect_i[1] for collect_i in collect
                 ])
         
-        output_args = ()
+        output_args = []
+        for _iter, idx in enumerate(index):
+            out_data = ()
+            if self.pth_isin_in:
+                out_data += in_img[_iter].float(), 
+            
+            if len(self.i_input_cols) > 0:
+                out_data +=  torch.tensor(data[_iter]).float(),
+                
+            if len(out_data) == 1:
+                out_data = out_data[0]
+            
+            out_targ = ()
+            if self.pth_isin_out:
+                out_targ += out_img[_iter].float(), 
+            
+            if len(self.i_input_cols) > 0:
+                out_targ +=  torch.tensor(targ[_iter]).float(),
+                
+            if len(out_targ) == 1:
+                out_targ = out_targ[0]
+            
+            if self._return_key:
+                output_args.append((out_data, out_targ, idx))
+            else :
+                output_args.append((out_data, out_targ))
         
-        out_data = ()
-        if self.pth_isin_in:
-            out_data += in_img.float(), 
-        
-        if len(self.i_input_cols) > 0:
-            out_data +=  torch.tensor(data).float(),
-            
-        if len(out_data) == 1:
-            output_args += out_data
-        else :
-            output_args += out_data,
-            
-        out_targ = ()
-        if self.pth_isin_out:
-            out_targ += out_img.float(), 
-        
-        if len(self.i_input_cols) > 0:
-            out_targ +=  torch.tensor(targ).float(),
-            
-        if len(out_targ) == 1:
-            output_args += out_targ
-        else :
-            output_args += out_targ,
-            
-        if self._return_key:
-            output_args +=  torch.as_tensor(index),
-            
         return output_args
     
 # if __name__ == '__main__':
