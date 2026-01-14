@@ -1,3 +1,4 @@
+from typing import Literal
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -14,18 +15,22 @@ def plot_confusion_matrix(
     """
     Plot confusion matrix with customizable options.
     
-    Args:
-        cm: Confusion matrix (numpy array)
-        class_names: List of class names
-        title: Plot title
-        normalize: If True, normalize the confusion matrix
-        figsize: Figure size tuple
-        cmap: Colormap for the heatmap
-        save_path: Optional path to save the figure
-        
-    Returns:
-        fig: matplotlib figure object
-        ax: matplotlib axes object
+    :param cm: Confusion matrix (numpy array)
+    :type cm: np.ndarray
+    :param class_names: List of class names
+    :type class_names: list[str]
+    :param title: Plot title
+    :param title: str
+    :param normalize: If True, normalize the confusion matrix
+    :param normalize: bool
+    :param figsize: Figure size tuple
+    :param figsize: tuple
+    :param cmap: Colormap for the heatmap
+    :param cmap: str
+    :param save_path: Optional path to save the figure
+    :param save_path: str | None
+    :return: Matplotlib figure and axes objects
+    :rtype: tuple(matplotlib.figure.Figure, matplotlib.axes.Axes)
     """
     if normalize:
         # Normalize confusion matrix, handling zero-sum rows
@@ -60,7 +65,7 @@ def plot_confusion_matrix(
 def plot_img_comparison(
         gt_img, 
         pr_img, 
-        slice_axis='z', 
+        slice_axis : Literal['x','y','z']='z', 
         n_slices=5, 
         figsize=(15, 5), 
         cmap='gray', 
@@ -68,15 +73,23 @@ def plot_img_comparison(
     ):
     """
     Plot comparison of ground truth and predicted images along specified axis.
-    
-    Args:
-        gt_img: Ground truth 3D image (numpy array)
-        pr_img: Predicted 3D image (numpy array)
-        slice_axis: Axis along which to slice ('x', 'y', or 'z')
-        n_slices: Number of slices to display
-        figsize: Figure size tuple
-        cmap: Colormap for the images
-        save_path: Optional path to save the figure
+
+    :param gt_img: Ground truth 3D image 
+    :type gt_img: np.ndarray
+    :param pr_img: Predicted 3D image
+    :type pr_img: np.ndarray
+    :param slice_axis: Axis along which to slice ('x', 'y', or 'z')
+    :type slice_axis: Literal['x','y','z']
+    :param n_slices: Number of slices to display
+    :type n_slices: int
+    :param figsize: Figure size tuple
+    :type figsize: tuple(int, int)
+    :param cmap: Colormap for the images
+    :type cmap: str
+    :param save_path: Optional path to save the figure
+    :type save_path: str | None
+    :return: Matplotlib figure and axes objects
+    :rtype: tuple(matplotlib.figure.Figure, matplotlib.axes.Axes)
     """
     axis_dict = {'x': 0, 'y': 1, 'z': 2}
     axis = axis_dict.get(slice_axis.lower(), 2)

@@ -66,13 +66,15 @@ class RSWAFFunction(Function):
     @staticmethod
     def forward(ctx, input, grid, inv_denominator):
         """
-        Args:
-            input (torch.Tensor): Input tensor [batch_size, input_dim]
-            grid (torch.Tensor): Grid points [num_grids]
-            inv_denominator (torch.Tensor): Inverse denominator
-            
-        Returns:
-            torch.Tensor: sech²((x-grid)*inv_denominator) values
+        :param ctx: Context to save information for backward pass
+        :param input: Input tensor [batch_size, input_dim]
+        :type input: torch.Tensor 
+        :param grid: Grid points [num_grids]
+        :type grid: torch.Tensor
+        :param inv_denominator: Inverse denominator
+        :type inv_denominator: torch.Tensor
+        :return: sech²((x-grid)*inv_denominator) values
+        :rtype: torch.Tensor 
         """
         diff = (input[..., None] - grid)
         diff_mul = diff.mul(inv_denominator) 
@@ -86,14 +88,17 @@ class RSWAFFunction(Function):
     @staticmethod
     def backward(ctx, grad_output,train_grid: bool = True, train_inv_denominator: bool = True, gradient_boost=1):
         """
-        Args:
-            ctx: Context from forward pass
-            grad_output (torch.Tensor): Gradient from downstream layers
-            train_grid (bool): Whether to compute gradients for grid points
-            train_inv_denominator (bool): Whether to compute gradients for inv_denominator
-            
-        Returns:
-            tuple: Gradients for input, grid, and inv_denominator
+        :param ctx: Context from forward pass
+        :param grad_output: Gradient from downstream layers
+        :type grad_output: torch.Tensor
+        :param train_grid: Whether to compute gradients for grid points
+        :type train_grid: bool
+        :param train_inv_denominator: Whether to compute gradients for inv_denominator
+        :type train_inv_denominator: bool
+        :param gradient_boost: Factor to scale gradients for grid and inv_denominator
+        :type gradient_boost: int
+        :return: Gradients for input, grid, and inv_denominator
+        :rtype: tuple(torch.Tensor, Optional[torch.Tensor], Optional[torch.Tensor])
         """
         inv_denominator, diff_mul, tanh_diff, tanh_diff_deriviative = ctx.saved_tensors
         grad_grid = grad_inv_denominator = None
@@ -168,14 +173,20 @@ class RSF(nn.Module):
 
 class RSFAuto(nn.Module):
     """
-    Args:
-        train_grid (bool): Whether to update grid points during training
-        train_inv_denominator (bool): Whether to update inv_denominator during training
-        grid_min (float): Minimum value for grid points
-        grid_max (float): Maximum value for grid points
-        num_grids (int): Number of grid points to use
-        inv_denominator (float): Initial value for inverse denominator parameter
-    
+    :param train_grid: Whether to update grid points during training
+    :type train_grid: bool
+    :param train_inv_denominator: Whether to update inv_denominator during training
+    :type train_inv_denominator: bool
+    :param grid_min: Minimum value for grid points
+    :type grid_min: float
+    :param grid_max: Maximum value for grid points
+    :type grid_max: float
+    :param num_grids: Number of grid points to use
+    :type num_grids: int
+    :param inv_denominator: Initial value for inverse denominator parameter
+    :type inv_denominator: float
+    :param mode: Type of radial basis function to use
+    :type mode: Literal['RSWAFF','tanh','tanh2','gaussian', 'sigmoid','square','triangle','sample']
     Attributes:
         grid (nn.Parameter): Learnable grid points evenly spaced from grid_min to grid_max
         inv_denominator (nn.Parameter): Learnable inverse denominator controlling RBF width
@@ -216,38 +227,45 @@ class RSFAuto(nn.Module):
 
     def forward(self, x):
         """
-        Args:
-            x (torch.Tensor): Input tensor [batch_size, input_dim]
-            
-        Returns:
-            torch.Tensor: Transformed tensor [batch_size, input_dim, num_grids]
+        :param x: Input tensor [batch_size, input_dim]
+        :type x: torch.Tensor
+        :return: Transformed tensor [batch_size, input_dim, num_grids]
+        :rtype: torch.Tensor
         """
         diff = (x[..., None] - self.grid).mul(self.inv_denominator) 
         return self.rbf(diff)
 
 class DynamicRSFAuto(nn.Module):
     """
-    Args:
-        train_grid (bool): Whether to update grid points during training
-        train_inv_denominator (bool): Whether to update inv_denominator during training
-        grid_min (float): Minimum value for grid points
-        grid_max (float): Maximum value for grid points
-        num_grids (int): Number of grid points to use
-        inv_denominator (float): Initial value for inverse denominator parameter
-    
-    Attributes:
-        grid (nn.Parameter): Learnable grid points evenly spaced from grid_min to grid_max
-        inv_denominator (nn.Parameter): Learnable inverse denominator controlling RBF width
+    :param input_dim: Dimensionality of input features
+    :type input_dim: int
+    :param num_grids: Number of grid points to use
+    :type num_grids: int
+    :param mode: Type of radial basis function to use
+    :type mode: Literal['RSWAFF','tanh','tanh2','gaussian', 'sigmoid','square','triangle','sample']
+    Attributes:    
+        params_linear (FasterKANLayer): KAN layer to compute grid and inv_denominator parameters
     """
     def __init__(
         self,
         input_dim: int,
         num_grids: int,
-        mode : Literal['RSWAFF','tanh','tanh2','gaussian', 'sigmoid','square','triangle','sample'] = 'RSWAFF'
+        mode : Literal['RSWAFF','tanh','tanh2','gaussian', 'sigmoid','square','triangle','sample'] = 'RSWAFF',
+        dropout_rate: Optional[float] = None,
     ):
         super(DynamicRSFAuto,self).__init__()
-        self.params_linear = nn.Linear(input_dim, num_grids + 1, bias=USE_BIAS_ON_LINEAR)
-        
+        self.params_linear = FasterKANLayer(
+            input_dim               = input_dim,
+            output_dim              = num_grids + 1,
+            num_grids               = 1,
+            grid_min                = 0,
+            grid_max                = 0,
+            inv_denominator         = 1.0,
+            train_grid              = False,
+            train_inv_denominator   = False,
+            mode                    = mode,
+            dropout_rate            = 0.,
+        )
         self.mode = mode
         if   self.mode == 'RSWAFF':
             self.rbf = lambda x : 1 - torch.nn.functional.tanh(x) ** 2
@@ -259,26 +277,23 @@ class DynamicRSFAuto(nn.Module):
             self.rbf = lambda x : torch.exp(-(x**2))
         elif self.mode == 'sigmoid':
             self.rbf = lambda x : torch.nn.functional.sigmoid(x)
-        # elif self.mode == 'square':
-        #     self.rbf = lambda x, threshold=0.5 : torch.where(x.abs() < threshold, 1., 0.)
-        # elif self.mode == 'triangle':
-        #     self.rbf = lambda x, threshold=0.5 : torch.where(x.abs() < threshold, -x, 0.)
         elif self.mode == 'sample':
             self.rbf = lambda x, guard=1e-8 : torch.sin(x+guard) / (x+guard)
         else :
             raise ValueError(f"Mode is not implemented; got '{self.mode}'")
+        
+        self.drop = nn.Dropout(0.5 if dropout_rate is None else dropout_rate) 
 
     def forward(self, x):
         """
-        Args:
-            x (torch.Tensor): Input tensor [batch_size, input_dim]
-            
-        Returns:
-            torch.Tensor: Transformed tensor [batch_size, input_dim, num_grids]
+        :param x: Input tensor [batch_size, input_dim]
+        :type x: torch.Tensor
+        :return: Transformed tensor [batch_size, input_dim, num_grids]
+        :rtype: torch.Tensor
         """
         params = self.params_linear(x).unsqueeze(-2)
-        grid, scale = params.split([self.params_linear.out_features - 1, 1], dim=-1)
-        diff = (x[..., None] - grid).mul(scale) 
+        grid, scale = params.split([self.params_linear.output_dim - 1, 1], dim=-1)
+        diff = (x[..., None] - self.drop(grid)).mul(scale) 
         return self.rbf(diff)
 
 class FasterKANLayer(nn.Module):
@@ -289,17 +304,27 @@ class FasterKANLayer(nn.Module):
     1. Transform inputs using Radial Spline Functions (RSF)
     2. Apply dropout with rate based on grid count (1-0.75^num_grids)
     3. Apply linear transformation to the outputs
-    
-    Args:
-        train_grid (bool): Whether to update grid points during training
-        train_inv_denominator (bool): Whether to update inv_denominator during training
-        input_dim (int): Dimensionality of input features
-        output_dim (int): Dimensionality of output features
-        grid_min (float): Minimum value for grid points
-        grid_max (float): Maximum value for grid points
-        num_grids (int): Number of grid points to use
-        inv_denominator (float): Initial value for inverse denominator parameter
-    
+
+    :param train_grid: Whether to update grid points during training
+    :type train_grid: bool
+    :param train_inv_denominator: Whether to update inv_denominator during training
+    :type train_inv_denominator: bool
+    :param input_dim: Dimensionality of input features
+    :type input_dim: int
+    :param output_dim: Dimensionality of output features
+    :type output_dim: int
+    :param grid_min: Minimum value for grid points
+    :type grid_min: float
+    :param grid_max: Maximum value for grid points
+    :type grid_max: float
+    :param num_grids: Number of grid points to use
+    :type num_grids: int
+    :param inv_denominator: Initial value for inverse denominator parameter
+    :type inv_denominator: float
+    :param mode: Type of radial basis function to use
+    :type mode: Literal['RSWAFF','tanh','tanh2','gaussian', 'sigmoid','square','triangle','sample']
+    :param dropout_rate: Dropout rate to use; if None, defaults to 0.5
+    :type dropout_rate: Optional[float]
     Attributes:
         rbf (RSF): Radial Spline Function module
         drop (nn.Dropout): Dropout layer with adaptive rate
@@ -316,21 +341,23 @@ class FasterKANLayer(nn.Module):
         num_grids: int,
         inv_denominator: float,
         mode : Literal['RSWAFF','tanh','tanh2','gaussian', 'sigmoid','square','triangle','sample'] = 'RSWAFF',
+        dropout_rate: Optional[float] = None,
     ) -> None:
         super(FasterKANLayer,self).__init__()
+        
+        self.input_dim = input_dim
+        self.output_dim = output_dim
 
         self.rbf = RSFAuto(train_grid, train_inv_denominator,grid_min, grid_max, num_grids, inv_denominator, mode=mode)
         self.linear = nn.Linear(input_dim * num_grids, output_dim, bias=USE_BIAS_ON_LINEAR) 
-        self.drop = nn.Dropout(0.5) # NOTE: Dropout rate increases with num_grids
-        # self.drop = nn.Dropout(1-0.9**(num_grids)) # NOTE: Dropout rate increases with num_grids
+        self.drop = nn.Dropout(0.5 if dropout_rate is None else dropout_rate) 
 
     def forward(self, x):
         """
-        Args:
-            x (torch.Tensor): Input tensor [batch_size, input_dim]
-            
-        Returns:
-            torch.Tensor: Output tensor [batch_size, output_dim]
+        :param x: Input tensor [batch_size, input_dim]
+        :type x: torch.Tensor
+        :return: Output tensor [batch_size, output_dim]
+        :rtype: torch.Tensor
         """
         batch_size = x.size(0)
         x = x.view(batch_size, -1)
@@ -347,17 +374,17 @@ class DynamicFasterKANLayer(nn.Module):
     1. Transform inputs using Radial Spline Functions (RSF)
     2. Apply dropout with rate based on grid count (1-0.75^num_grids)
     3. Apply linear transformation to the outputs
-    
-    Args:
-        train_grid (bool): Whether to update grid points during training
-        train_inv_denominator (bool): Whether to update inv_denominator during training
-        input_dim (int): Dimensionality of input features
-        output_dim (int): Dimensionality of output features
-        grid_min (float): Minimum value for grid points
-        grid_max (float): Maximum value for grid points
-        num_grids (int): Number of grid points to use
-        inv_denominator (float): Initial value for inverse denominator parameter
-    
+
+    :param input_dim: Dimensionality of input features
+    :type input_dim: int
+    :param output_dim: Dimensionality of output features
+    :type output_dim: int
+    :param num_grids: Number of grid points to use
+    :type num_grids: int
+    :param mode: Type of radial basis function to use
+    :type mode: Literal['RSWAFF','tanh','tanh2','gaussian', 'sigmoid','square','triangle','sample']
+    :param dropout_rate: Dropout rate to use; if None, defaults to 0.5
+    :type dropout_rate: Optional[float]
     Attributes:
         rbf (RSF): Radial Spline Function module
         drop (nn.Dropout): Dropout layer with adaptive rate
@@ -369,22 +396,21 @@ class DynamicFasterKANLayer(nn.Module):
         output_dim: int,
         num_grids: int,
         mode : Literal['RSWAFF','tanh','tanh2','gaussian', 'sigmoid','square','triangle','sample'] = 'RSWAFF',
+        dropout_rate: Optional[float] = None,
         **kwargs
     ) -> None:
         super(DynamicFasterKANLayer,self).__init__()
 
-        self.rbf = DynamicRSFAuto(input_dim, num_grids, mode=mode)
+        self.rbf = DynamicRSFAuto(input_dim, num_grids, mode=mode, dropout_rate=dropout_rate)
         self.linear = nn.Linear(input_dim * num_grids, output_dim, bias=USE_BIAS_ON_LINEAR) 
-        self.drop = nn.Dropout(0.5) # NOTE: Dropout rate increases with num_grids
-        # self.drop = nn.Dropout(1-0.9**(num_grids)) # NOTE: Dropout rate increases with num_grids
+        self.drop = nn.Dropout(0.5 if dropout_rate is None else dropout_rate) 
 
     def forward(self, x):
         """
-        Args:
-            x (torch.Tensor): Input tensor [batch_size, input_dim]
-            
-        Returns:
-            torch.Tensor: Output tensor [batch_size, output_dim]
+        :param x: Input tensor [batch_size, input_dim]
+        :type x: torch.Tensor
+        :return: Output tensor [batch_size, output_dim]
+        :rtype: torch.Tensor
         """
         batch_size = x.size(0)
         x = x.view(batch_size, -1)
@@ -399,6 +425,24 @@ class FasterKAN(nn.Module):
     FasterKAN: Radial Basis Function-based Kolmogorov-Arnold Network.
     This model stacks multiple FasterKANLayers to create a deep RBF-KAN architecture.
     
+    :param hidden_layers: List of layer dimensions including input and output dimensions
+        e.g., [784, 100, 10] for MNIST classification with one hidden layer
+    :type hidden_layers: List[int]
+    :param num_grids: Number of grid points for each layer
+        If a single int is provided, it's used for all layers
+    :type num_grids: Union[int, List[int]]
+    :param grid_min: Minimum value for grid points
+    :type grid_min: float
+    :param grid_max: Maximum value for grid points
+    :type grid_max: float
+    :param inv_denominator: Initial value for inverse denominator parameter
+    :type inv_denominator: float
+    :param mode: Type of radial basis function to use
+    :type mode: Literal['RSWAFF','tanh','tanh2','gaussian', 'sigmoid','square','triangle','sample']
+    :param residual: List of booleans indicating whether to use residual connections for each layer
+    :type residual: list[bool]
+    :param dynamic: Whether to use dynamic grid and inv_denominator parameters
+    :type dynamic: bool
     Args:
         hidden_layers (List[int]): List of layer dimensions including input and output dimensions
             e.g., [784, 100, 10] for MNIST classification with one hidden layer
@@ -429,6 +473,7 @@ class FasterKAN(nn.Module):
         mode : Literal['RSWAFF','tanh','tanh2','gaussian', 'sigmoid','square','triangle','sample'] = 'RSWAFF',
         residual : list[bool] = False,
         dynamic : bool = False,
+        dropout_rate: Optional[float] = None,
     ):
         super(FasterKAN, self).__init__()
 
@@ -459,15 +504,16 @@ class FasterKAN(nn.Module):
         
         self.layers = nn.ModuleList([
             LayerClass(
-                train_grid=self.train_grid,
-                train_inv_denominator=self.train_inv_denominator,
-                input_dim=in_dim, 
-                output_dim=out_dim, 
-                grid_min=grid_min_i,
-                grid_max=grid_max_i,
-                num_grids=num_grids_i,
-                inv_denominator=inv_denominator_i,
-                mode=mode
+                train_grid            = self.train_grid,
+                train_inv_denominator = self.train_inv_denominator,
+                input_dim             = in_dim, 
+                output_dim            = out_dim, 
+                grid_min              = grid_min_i,
+                grid_max              = grid_max_i,
+                num_grids             = num_grids_i,
+                inv_denominator       = inv_denominator_i,
+                mode                  = mode,
+                dropout_rate          = dropout_rate,
             ) for _iter, (
                 num_grids_i, 
                 in_dim, 

@@ -208,6 +208,8 @@ def train(
                         pbar_iter.set_description(descr.format(epoch=epoch, tr_loss=tr_loss/_iter, val_loss=val_loss, best_loss=best_loss))
                     elif show_pbar == 'external':
                         pbar_epoch.set_description(descr.format(epoch=epoch, tr_loss=tr_loss/_iter, val_loss=val_loss, best_loss=best_loss))
+                   
+                del data, target, prediction, loss
                     
                 tr_loss = float(tr_loss / len(train_dataloader))
                 hist_train_epoch.update({'loss' : tr_loss})
@@ -279,7 +281,7 @@ def train(
                     best_loss = val_loss
                     save_model(model, os.path.join(model_dirname,'best'), device)   
                     patience_counter = 0
-                elif patience is not None:
+                elif patience is not None and patience > 1:
                     patience_counter += 1
                     
                     if patience_counter > patience:
@@ -339,6 +341,16 @@ def train(
             
         save_model(model, os.path.join(model_dirname,'last'), device)
         save_dict(history, os.path.join(top_dirname,'history'))
+        
+        if 'data' in locals():
+            del data
+        if 'target' in locals():
+            del target
+        if 'prediction' in locals():
+            del prediction
+        if 'loss' in locals():
+            del loss
+        
         raise e
     
     loc_kwargs = {
@@ -359,7 +371,6 @@ def train(
     for callback in callbacks['training_finished']:
         callback(**loc_kwargs)
         
-    
     if saving_steps < 1 or (epoch % saving_steps != 0):
         save_model(model, os.path.join(model_dirname,'last'), device)
         save_dict(history, os.path.join(top_dirname,'history'))

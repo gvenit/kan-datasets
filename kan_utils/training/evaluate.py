@@ -156,7 +156,9 @@ def evaluate(
             if key is not None:
                 keys.extend(key)
                 # print(keys)
-            
+        
+        del data, target, prediction
+        
         prediction = torch.cat(preds)
         target = torch.cat(targs)
         

@@ -8,7 +8,7 @@ from .. import metrics
 from .. import models
 from .. import callbacks
 from ..training import get_callable_basis
-
+from ..utils import save_dict, load_dict
 
 def get_locals(*args):
     locals_dict = {**__builtins__}
@@ -69,12 +69,19 @@ def get_default_training_config() -> dict:
         'callbacks'             : get_callable_basis(),
         'callbacks_arguments'   : {},
     }
+def type_to_config(obj_type, target_name=None):
+    if target_name is None:
+        target_name = ''
+    return {
+        target_name : '!' + repr(obj_type),
+    }
 
 def object_to_config(
     obj, 
     *args, 
     target_name = None, 
-    **kwargs):
+    **kwargs
+):
     if target_name is None:
         target_name = ''
     
@@ -175,45 +182,30 @@ def parse_json(config, locals=None) -> dict:
         # print(key, val, config[key])
     return config
     
-def save_config(config, path) -> None:
+def save_config(config, fname) -> str:
     '''Save a configuration dictionary to the specified json file.
     
-    Parameters
-    ----------
-    path : The path to the json file
-    dict : The configuration dictionary
+    :param config: The configuration dictionary
+    :type config: dict
+    :param fname: The path to the json file
+    :type fname: str
+    :return fname: The path to the saved json file
+    :rtype fname: str
     '''
     config = parse_config(config)
+    return save_dict(config, fname)
 
-    if os.path.splitext(path)[-1] != '.json':
-        path = f'{path}.json'
-        
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, 'w') as fw:
-        json.dump(config, fw, indent=2)
-        
-    return path
-
-def load_config(path, locals : dict[str, object]=None) -> dict:
+def load_config(fname, locals : dict[str, object]=None) -> dict:
     '''Load a configuration dictionary from the specified json file.
     
-    Parameters
-    ----------
-    path : str 
-        The path to the json file
-    locals: dict[str, object], optional
-        A dictionary containing objects from locally imported modules.
-        
-    Returns
-    -------
-    dict : The configuration dictionary
+    :param fname: The path to the json file
+    :type fname: str
+    :param locals: A dictionary containing objects from locally imported modules.
+    :type locals: dict[str, object], optional
+    :return config: The configuration dictionary
+    :rtype config: dict[str, object]
     '''
-    if os.path.splitext(path)[-1] != '.json':
-        path = f'{path}.json'
-        
-    with open(path, 'r') as fr:
-        config = json.load(fr)
-
+    config = load_dict(fname)
     return parse_json(config, locals)
 
 def weak_instantiate_all(config : dict[str,object] | Iterable | object) -> dict[str,object] | Iterable | object:
@@ -229,6 +221,8 @@ def weak_instantiate_all(config : dict[str,object] | Iterable | object) -> dict[
                         if not (key.endswith('_args') or key.endswith('_kwargs'))
             }
     elif isinstance(config, (str, )):
+        if config.startswith(('!<class ')):
+            return find_object(config[1:])
         return config
     elif hasattr(config,'__iter__'):
         # print('weak_instantiate_all --', config)
@@ -240,7 +234,7 @@ def weak_instantiate_all(config : dict[str,object] | Iterable | object) -> dict[
 def weak_instantiate(config, key):
     # print('weak_instantiate --', key, '--', config.keys())
     if isinstance(config[key], type):
-        return instantiate(config,key)
+        return instantiate(config, key)
     elif hasattr(config[key],'__iter__'):
         return weak_instantiate_all(config[key])
     else :
@@ -252,17 +246,27 @@ def instantiate(config, key, *args, **kwargs):
     
     # this_type = find_object(config[key], locals)
     
-    # print(f"config[f'{key}'_args]", config[f'{key}_args'])
     if f'{key}_args' in config.keys() :
+        # print(f"config[f'{key}'_args]", config[f'{key}_args'])
         args += tuple(weak_instantiate_all(config[f'{key}_args']))
 
-    # print('Config keys :', config.keys(),f'{key}_kwargs' in config.keys())
     if f'{key}_kwargs' in config.keys() :
+        # print('Config keys :', config.keys(),f'{key}_kwargs' in config.keys())
         kwargs.update(
             weak_instantiate_all(config[f'{key}_kwargs'])
         )
     # print(args, kwargs)
     return config[key](*args, **kwargs)
+
+def check_config(config, locals=None) -> dict:
+    '''Check if a configuration dictionary is valid.
+    
+    :param config: The configuration dictionary
+    :type config: dict
+    :raises TypeError: If the configuration dictionary is invalid
+    '''
+    config = parse_config(config)
+    return parse_json(config, locals)
 
 if __name__ == '__main__':
     os.chdir(os.path.dirname(__file__))

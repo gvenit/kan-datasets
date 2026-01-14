@@ -50,3 +50,5 @@ def expand_value(val, size):
 
     assert len(val) == size, f"Size missmatch; expected size {size}; got {len(val)} \n {val}"
     return val
+
+uses_momentum = lambda optimizer : optimizer in ('SGD', 'RMSprop')
