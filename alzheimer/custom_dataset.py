@@ -9,6 +9,29 @@ import os
 
 global_pool = torch.multiprocessing.get_context().Pool(processes=torch.multiprocessing.cpu_count())
 
+class SwapAxes3D (A.Transform3D):
+    def __init__(
+        self, 
+        p = 1, 
+        orientation : Literal['x','y','z','random'] = 'random' 
+    ):
+        super().__init__(p)
+        self.orientation = {
+            'x' : lambda : 0,
+            'y' : lambda : 1,
+            'z' : lambda : 2,
+            'random' : lambda : self.random_generator.integers(0,3)
+        }[orientation]
+        
+        self.transforms = {
+            0 : lambda volume: np.swapaxes(volume, 0, 2),
+            1 : lambda volume: np.swapaxes(volume, 0, 1),
+            2 : lambda volume: volume,
+        }
+        
+    def apply_to_volume(self, volume, *args, **params,) :
+        return self.transforms[self.orientation()](volume)
+        
 class AlzheimerDataset (Dataset): 
     def __init__(
         self, 
@@ -19,7 +42,7 @@ class AlzheimerDataset (Dataset):
         output_img_dims,
         return_key = False, 
         path_col = 'Path',
-        orientation : Literal['x','y','z','fixed','random'] = 'fixed',
+        orientation : Literal['x','y','z','same','random'] = 'same',
     ):
         super().__init__()
         
@@ -45,30 +68,40 @@ class AlzheimerDataset (Dataset):
         self.input_img_dims  = input_img_dims
         self.output_img_dims = output_img_dims
         self.orientation     = orientation
-            
+        
         self.transform = A.Compose([
                 A.Normalize(normalization='min_max'),
                 A.RandomCrop3D(self.input_img_dims),
-                A.CubicSymmetry(),
-                A.CoarseDropout3D(p=0.5),
             ], telemetry=False
         )
+        if self.orientation == 'same':
+            self.transform = A.Compose([
+                    self.transform,
+                    A.CubicSymmetry(),
+                    A.CoarseDropout3D(p=0.5),
+                ], telemetry=False
+            )
+        elif self.orientation in ('x','y','z', 'random'):
+            self.in_transform = A.Compose([
+                    A.CubicSymmetry(),
+                    A.CoarseDropout3D(p=0.5),
+                ], telemetry=False
+            )
+            if self.orientation == 'random':
+                self.out_transform = A.Compose([
+                    A.CubicSymmetry(),
+                ], telemetry=False
+            )
+            else :
+                self.out_transform = A.Compose([
+                        SwapAxes3D(orientation=self.orientation),
+                    ], telemetry=False
+                )
+                
     
     def get_keys(self, index):
         return [self.index[idx] for idx in index]
     
-    def __get_orientation(self):
-        if self.orientation in ('x','y','z',):
-            in_axis = out_axis = self.orientation
-        else :
-            if self.orientation in ('fixed',):
-                in_axis = out_axis = ['x','y','z'][torch.randint(0,3,(1,))]
-            if self.orientation in ('random',):
-                in_axis  = ['x','y','z'][torch.randint(0,3,(1,))]
-                out_axis = ['x','y','z'][torch.randint(0,3,(1,))]
-                
-        return in_axis, out_axis
-        
     def __len__(self) :
         return len(self.df)
     
@@ -80,41 +113,36 @@ class AlzheimerDataset (Dataset):
         img = nib.load(pth)
         return np.asarray(img.get_fdata(), dtype=img.header.get_data_dtype())
     
-    def __get_image_pack(self, pth, in_axis, out_axis):
+    def __get_image_pack(self, pth):
         img = self.__get_image(pth)
         img = self.transform(volume = img,)['volume']
-        if self.pth_isin_in:
-            in_img = torch.as_tensor(img).float()
+        
+        if self.orientation == 'same':
+            if self.pth_isin_in:
+                in_img = torch.as_tensor(img).float()
+            else :
+                in_img = None
+                
+            if self.pth_isin_out:
+                out_img = torch.as_tensor(img).float()
+            else :
+                out_img = None
         else :
-            in_img = None
-            
-        if self.pth_isin_out:
-            out_img = torch.as_tensor(img).float()
-        else :
-            out_img = None
-            
+            if self.pth_isin_in:
+                in_img = self.in_transform(volume = img,)['volume']
+                in_img = torch.as_tensor(in_img).float()
+            else :
+                in_img = None
+                
+            if self.pth_isin_out:
+                out_img = self.out_transform(volume = img,)['volume']
+                out_img = torch.as_tensor(out_img).float()
+            else :
+                out_img = None
+                
         return in_img, out_img
     
     def __getitem__(self, index):
-        # data, targ, *key = self.__getitems__([index,])
-        
-        # if isinstance(data, tuple):
-        #     data = tuple(
-        #         _.squeeze(0) for _ in data
-        #     )
-        # else :
-        #     data = data.squeeze(0)
-            
-        # if isinstance(targ, tuple):
-        #     targ = tuple(
-        #         _.squeeze(0) for _ in targ
-        #     )
-        # else :
-        #     targ = targ.squeeze(0)
-        # key = tuple([
-        #     _[0] for _ in key
-        # ])
-        # return data, targ, *key
         return self.__getitems__([index,])[0]
     
     def __getitems__(self, index):
@@ -128,9 +156,7 @@ class AlzheimerDataset (Dataset):
         if self.pth_isin_in or self.pth_isin_out:
             pth = self.df.iloc[index, self.i_path_col]
             
-            in_axis, out_axis = self.__get_orientation()
-            
-            collect = [self.__get_image_pack(pth_i, in_axis, out_axis) for pth_i in pth]
+            collect = [self.__get_image_pack(pth_i) for pth_i in pth]
             
             if self.pth_isin_in:
                 in_img = torch.stack([

@@ -1,12 +1,68 @@
 from collections import OrderedDict
 import torch
 import sys, os
+from typing import overload
+import hashlib
 
 THIS_DIR = os.path.dirname(__file__)
 TOP_DIR = os.path.dirname(THIS_DIR)
 sys.path.append(TOP_DIR)
 
-from kan_utils.utils import load_model, save_model
+from kan_utils.utils import load_model, save_model, uses_momentum
+from kan_utils.config import object_to_config, find_class_name
+
+_tr_type = {
+    1 : 'img_enc_dec',
+    2 : 'spt_enc_dec',
+}
+
+def build_training_dir(
+    train_config, 
+    top_dir = None, 
+    test_version = None, 
+    training_stage : int = 1
+):
+    pdir = os.path.join(*[
+            '_'.join([
+                find_class_name(train_config[obj]),
+            ] + list([
+                    str(_) for _ in train_config[f'{obj}_args']
+                ] if f'{obj}_args' in train_config.keys() else []
+            ) + list([
+                    '_'.join([key, str(val)]) for key, val in train_config[f'{obj}_kwargs'].items()
+                ] if f'{obj}_kwargs' in train_config.keys() else []
+            ))
+                for obj in ['scheduler', 'optimizer', 'criterion']
+        ],
+        '_'.join(['seed', str(train_config['seed'])]),
+        '_'.join(['patience', str(train_config['patience'])]),
+        '_'.join(['batch_size', str(train_config['batch_size'])]),
+        '_'.join(['epochs', str(train_config['epochs'])]),
+    )
+    if training_stage > 1:
+        pdir = os.path.join(train_config[f'tr{training_stage-1}_hash'], pdir)
+        
+    hashed = hashlib.sha1(pdir.encode()).hexdigest()
+    pdir = os.path.join('train_config', _tr_type[training_stage], hashed)
+    if top_dir is not None:
+        pdir = os.path.join(top_dir,pdir)
+    if test_version is not None:
+        pdir = os.path.join(pdir,test_version)
+    return pdir, hashed 
+
+def build_model_dir(
+    model, 
+    top_dir = None, 
+    test_version = None,
+    training_stage : int = 1,
+):
+    hashed = hashlib.sha1(repr(model).encode()).hexdigest()
+    pdir = os.path.join('model_config', _tr_type[training_stage], hashed)
+    if top_dir is not None:
+        pdir = os.path.join(top_dir,pdir)
+    if test_version is not None:
+        pdir = os.path.join(pdir,test_version)
+    return pdir, hashed
 
 def build_train_1_model(
     img_enc,
@@ -56,32 +112,129 @@ def load_train_1_model(
     load_model(model._modules['img_dec'], img_dec_pth)
     return model.to(device)
 
+@overload
+def build_train_2_model(
+    spt_enc,
+    spt_dec,
+) :
+    ...
+    
+@overload
+def build_train_2_model(
+    spt_enc,
+    spt_dec,
+    img_enc,
+    img_dec,
+) :
+    ...
+    
+def build_train_2_model(
+    spt_enc,
+    spt_dec,
+    img_enc = None,
+    img_dec = None,
+) :
+    if img_enc is None and img_dec is None :
+        return torch.nn.Sequential(
+            OrderedDict([
+                ('spt_enc', spt_enc), 
+                ('spt_dec', spt_dec),
+            ])
+        )
+    return torch.nn.Sequential(
+        OrderedDict([
+            ('img_enc', img_enc), 
+            ('spt_enc', spt_enc), 
+            ('spt_dec', spt_dec),
+            ('img_dec', img_dec),
+        ])
+    )
+    
+def save_train_2_model(
+    model,
+    spt_hash,
+    train_hash,
+    epoch,
+    top_dir = None,
+    test_version = 'test_0',
+    device = torch.device('cpu'),
+):
+    model.to('cpu')
+    for name, module in model._modules.items():
+        pth = os.path.join(top_dir, name, spt_hash, train_hash, test_version, epoch)
+        os.makedirs(os.path.dirname(pth), exist_ok=True)
+        save_model(module, pth)
+        
+    model.to(device)
+    
+def load_train_2_model(
+    model,
+    img_hash,
+    spt_hash,
+    train_hash,
+    epoch,
+    top_dir = None,
+    test_version = 'test_0',
+    device = torch.device('cpu'),
+):
+    model.to('cpu')
+    for name, module in model._modules.items():
+        if name.startswith('img'):
+            pth = os.path.join(top_dir, name, img_hash, train_hash, test_version, epoch)
+        else:
+            pth = os.path.join(top_dir, name, spt_hash, train_hash, test_version, epoch)
+        os.makedirs(os.path.dirname(pth), exist_ok=True)
+        save_model(module, pth)
+        
+    return model.to(device)
+
 def get_training_subdir(
     training_stage : int,
-    img_hash,
+    model_hash,
     train_hash,
-    top_dir,
+    top_dir = None,
     test_version = 'test_0',
 ):
-    if training_stage == 1 :
-        pth = os.path.join('train_1', img_hash, train_hash, test_version)
-        if top_dir is not None:
-            return os.path.join(top_dir, pth)
-    else :
-        raise NotImplementedError(f'Implemented only for stage 1: got {training_stage}')
+    pth = os.path.join(f'train_{training_stage}', model_hash, train_hash, test_version)
+    if top_dir is not None:
+        return os.path.join(top_dir, pth)
+
+def get_train_config_path(
+    training_stage : int,
+    train_hash,
+    top_dir = None,
+    test_version = 'test_0',
+):
+    pth = os.path.join('train_config', _tr_type[training_stage], train_hash, test_version)
+    if top_dir is not None:
+        pth = os.path.join(top_dir, pth)
+        
+    return pth
+
+def get_model_config_path(
+    training_stage : int,
+    model_hash,
+    top_dir = None,
+    test_version = 'test_0',
+):
+    pth = os.path.join('model_config', _tr_type[training_stage], model_hash, test_version)
+    if top_dir is not None:
+        pth = os.path.join(top_dir, pth)
+        
+    return pth
 
 def housekeep(
     training_stage : int,
     model,
-    img_hash,
+    model_hash,
     train_hash,
-    top_dir,
+    top_dir = None,
     test_version = 'test_0',
     device = torch.device('cpu'),
 ) :
     tr_subdir = get_training_subdir(
         training_stage  = training_stage,
-        img_hash        = img_hash, 
+        model_hash      = model_hash, 
         train_hash      = train_hash,
         top_dir         = top_dir,
         test_version    = test_version,
@@ -97,7 +250,7 @@ def housekeep(
                 _pth = save_model(model, pth.format(epoch=epoch))
                 save_train_1_model(
                     model,
-                    img_hash    = img_hash, 
+                    img_hash    = model_hash, 
                     train_hash  = train_hash,
                     epoch       = epoch,
                     top_dir     = top_dir,
@@ -109,12 +262,27 @@ def housekeep(
                 print(e)
                 
         os.removedirs(os.path.dirname(pth))
-
-        # # Move history directory
-        # if os.path.exists(os.path.join(top_dir, 'history.json')):
-        #     os.renames(
-        #         os.path.join(top_dir, 'history.json'),
-        #         os.path.join(top_dir, 'train_1', img_hash, train_hash, test_version, 'history.json'),
-        #     )
-    
+    if training_stage == 2 :
+        # Split best model state dict to separate files
+        pth = os.path.join(tr_subdir, 'models', '{epoch}')
+        
+        for epoch in os.listdir(os.path.dirname(pth)):
+            try :
+                epoch = os.path.splitext(epoch)[0]
+                load_model(model, pth.format(epoch=epoch))
+                _pth = save_model(model, pth.format(epoch=epoch))
+                save_train_2_model(
+                    model,
+                    spt_hash    = model_hash, 
+                    train_hash  = train_hash,
+                    epoch       = epoch,
+                    top_dir     = top_dir,
+                    test_version= test_version,
+                    device      = device,
+                )
+                os.remove(_pth)
+            except Exception as e:
+                print(e)
+                
+        os.removedirs(os.path.dirname(pth))
         

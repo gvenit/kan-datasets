@@ -147,6 +147,11 @@ class RSF(nn.Module):
         inv_denominator: float
     ):
         super(RSF,self).__init__()
+        self.grid_min = grid_min
+        self.grid_max = grid_max
+        self.num_grids = num_grids
+        self.scale = inv_denominator
+        
         grid = torch.linspace(grid_min, grid_max, num_grids).float()
 
         self.train_grid = train_grid
@@ -154,6 +159,12 @@ class RSF(nn.Module):
 
         self.grid = torch.nn.Parameter(grid, requires_grad=train_grid)
         self.inv_denominator = torch.nn.Parameter(torch.tensor(inv_denominator).float(), requires_grad=train_inv_denominator)  # Cache the inverse of the denominator
+
+    def extra_repr(self) -> str:
+        """
+        Return the extra representation of the module.
+        """
+        return f"num_grids={self.num_grids}, grid_min={self.grid_min}, grid_max={self.grid_max}, inv_denominator={self.scale}"
 
     # def to(self, device, **kwagrs):
     #     self.grid = self.grid.to(device)
@@ -202,6 +213,11 @@ class RSFAuto(nn.Module):
         mode : Literal['RSWAFF','tanh','tanh2','gaussian', 'sigmoid','square','triangle','sample'] = 'RSWAFF'
     ):
         super(RSFAuto,self).__init__()
+        self.grid_min = grid_min
+        self.grid_max = grid_max
+        self.num_grids = num_grids
+        self.scale = inv_denominator
+        
         grid = torch.linspace(grid_min, grid_max, num_grids).float()
         self.grid = torch.nn.Parameter(grid, requires_grad=train_grid)
         self.inv_denominator = torch.nn.Parameter(torch.tensor(inv_denominator).float(), requires_grad=train_inv_denominator)  # Cache the inverse of the denominator
@@ -224,6 +240,12 @@ class RSFAuto(nn.Module):
             self.rbf = lambda x, guard=1e-8 : torch.sin(x+guard) / (x+guard)
         else :
             raise ValueError(f"Mode is not implemented; got '{self.mode}'")
+
+    def extra_repr(self) -> str:
+        """
+        Return the extra representation of the module.
+        """
+        return f"num_grids={self.num_grids}, grid_min={self.grid_min}, grid_max={self.grid_max}, inv_denominator={self.scale}, mode={self.mode}"
 
     def forward(self, x):
         """
@@ -284,6 +306,12 @@ class DynamicRSFAuto(nn.Module):
         
         self.drop = nn.Dropout(0.5 if dropout_rate is None else dropout_rate) 
 
+    def extra_repr(self) -> str:
+        """
+        Return the extra representation of the module.
+        """
+        return f"num_grids={self.params_linear.output_dim-1}, mode={self.mode}"
+
     def forward(self, x):
         """
         :param x: Input tensor [batch_size, input_dim]
@@ -332,8 +360,6 @@ class FasterKANLayer(nn.Module):
     """
     def __init__(
         self,
-        train_grid: bool,        
-        train_inv_denominator: bool,
         input_dim: int,
         output_dim: int,
         grid_min: float,
@@ -342,6 +368,8 @@ class FasterKANLayer(nn.Module):
         inv_denominator: float,
         mode : Literal['RSWAFF','tanh','tanh2','gaussian', 'sigmoid','square','triangle','sample'] = 'RSWAFF',
         dropout_rate: Optional[float] = None,
+        train_grid: bool = True,        
+        train_inv_denominator: bool = True,
     ) -> None:
         super(FasterKANLayer,self).__init__()
         
@@ -400,6 +428,9 @@ class DynamicFasterKANLayer(nn.Module):
         **kwargs
     ) -> None:
         super(DynamicFasterKANLayer,self).__init__()
+
+        self.input_dim = input_dim
+        self.output_dim = output_dim
 
         self.rbf = DynamicRSFAuto(input_dim, num_grids, mode=mode, dropout_rate=dropout_rate)
         self.linear = nn.Linear(input_dim * num_grids, output_dim, bias=USE_BIAS_ON_LINEAR) 
@@ -530,6 +561,12 @@ class FasterKAN(nn.Module):
                 inv_denominator,
             ))
         ])
+
+    def extra_repr(self) -> str:
+        """
+        Return the extra representation of the module.
+        """
+        return f"residual={tuple(self.residual)}"
 
     def eval(self):
         """

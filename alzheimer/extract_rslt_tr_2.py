@@ -37,7 +37,7 @@ if __name__ == '__main__' :
     else:
         img_hash = args.model_config
         args.model_config = get_model_config_path(
-            training_stage  = 1,
+            training_stage  = 2,
             model_hash      = args.model_config,
             top_dir         = args.test_dir,
             test_version    = args.test_version,
@@ -55,7 +55,7 @@ if __name__ == '__main__' :
     else:
         train_hash = args.train_config
         args.train_config = get_train_config_path(
-            training_stage  = 1,
+            training_stage  = 2,
             train_hash      = args.train_config,
             top_dir         = args.test_dir,
             test_version    = args.test_version,
@@ -84,7 +84,7 @@ if __name__ == '__main__' :
     import matplotlib.pyplot as plt
 
     training_subdir = get_training_subdir(
-        training_stage  = 1,
+        training_stage  = 2,
         model_hash      = img_hash, 
         train_hash      = train_hash,
         top_dir         = args.test_dir,

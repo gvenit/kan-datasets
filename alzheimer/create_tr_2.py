@@ -8,10 +8,11 @@ sys.path.append(TOP_DIR)
 
 if __name__ == '__main__' :
     parser = ArgumentParser(
-        description='Training configuration script for 1st training stage training the Alzheimer\'s Dataset.'
+        description='Training configuration script for 2nd training stage training the Alzheimer\'s Dataset.'
     )
 
     parser.add_argument('-d', '--dest-top-directory', dest='dest_top_dir', default=os.path.join(THIS_DIR,'train'))
+    parser.add_argument('--tr-1','--train-config-1', dest='tr1_hash', help='The hash of the 1st training configuration file.')
     parser.add_argument('--seed', dest='seed', type=int, default=42)
     parser.add_argument('--patience', dest='patience', default=0)
     parser.add_argument('--epochs', dest='epochs', default=500)
@@ -42,6 +43,8 @@ if __name__ == '__main__' :
     df = expand_df_labels(build_dataset())
 
     train_config = get_default_training_config()
+    train_config['tr1_hash']   = args.tr1_hash
+    train_config['freeze_img'] = True
     train_config.update(
         object_to_config(
             # torch.nn.HuberLoss,
@@ -49,9 +52,9 @@ if __name__ == '__main__' :
             target_name     = 'criterion',
             reduction       = 'mean',
     ))
-    train_config['patience']    = args.patience
-    train_config['epochs']      = args.epochs
-    # train_config['clip_limit']  = 1.
+    train_config['patience'] = args.patience
+    train_config['clip_limit'] = 1.
+    train_config['epochs'] = args.epochs
     train_config.update(
         object_to_config(
             getattr(torch.optim, args.optimizer),
@@ -108,13 +111,14 @@ if __name__ == '__main__' :
             FlattenBatch,
             data_dim    = -3
         )
-    ) 
+    )
     pdir, train_config['hash'] = build_training_dir(
         train_config, 
         top_dir         = args.dest_top_dir, 
         test_version    = args.test_version,
-        training_stage  = 1,
+        training_stage  = 2,
     )
+        
     if args.hash:
         print(train_config['hash'])
 

@@ -34,7 +34,7 @@ if __name__ == '__main__' :
         
     else:
         args.model_config = get_model_config_path(
-            training_stage  = 1,
+            training_stage  = 2,
             model_hash      = args.model_config,
             top_dir         = args.test_dir,
             test_version    = args.test_version,
@@ -51,7 +51,7 @@ if __name__ == '__main__' :
         
     else:
         args.train_config = get_train_config_path(
-            training_stage  = 1,
+            training_stage  = 2,
             train_hash      = args.train_config,
             top_dir         = args.test_dir,
             test_version    = args.test_version,
@@ -92,12 +92,34 @@ if __name__ == '__main__' :
     # Check configuration file validity
     train_config = load_config(args.train_config, locals=get_locals(extract_statistics))
     model_config = load_config(args.model_config, locals=get_locals(custom_model))
+    img_config   = load_config(
+        get_model_config_path(
+            training_stage  = 1,
+            model_hash      = model_config['img_hash'],
+            top_dir         = args.test_dir,
+            test_version    = args.test_version,
+        ),
+        locals=get_locals(custom_model)
+    )
     set_seed(train_config['seed'])
-
+    
     # Instantiate models
-    img_enc = instantiate(model_config,'img_enc')
-    img_dec = instantiate(model_config,'img_dec')
-    model   = build_train_1_model(
+    img_enc : torch.nn.Module = instantiate(img_config,'img_enc')
+    img_dec : torch.nn.Module = instantiate(img_config,'img_dec')
+    spt_enc : torch.nn.Module = instantiate(model_config,'spt_enc')
+    spt_dec : torch.nn.Module = instantiate(model_config,'spt_dec')
+    
+    # Freeze image encoders
+    if train_config['freeze_img']:
+        for params in img_enc.parameters():
+            params.requires_grad_(False)
+            
+        for params in img_dec.parameters():
+            params.requires_grad_(False)
+    
+    model   = build_train_2_model(
+        spt_enc = spt_enc,
+        spt_dec = spt_dec,
         img_enc = img_enc,
         img_dec = img_dec,
     )
@@ -138,8 +160,8 @@ if __name__ == '__main__' :
             normalize_dataset(expand_df_labels(build_dataset())), 
             input_cols      = model_config['input'],
             output_cols     = model_config['output'],
-            input_img_dims  = model_config['input_img_dim'],
-            output_img_dims = model_config['output_img_dim'],
+            input_img_dims  = img_config['input_img_dim'],
+            output_img_dims = img_config['output_img_dim'],
             return_key      = False, 
             path_col        = 'Path',
             orientation     = 'same',
@@ -148,7 +170,7 @@ if __name__ == '__main__' :
         seed            = train_config['seed']
     )
     training_subdir = get_training_subdir(
-        training_stage  = 1,
+        training_stage  = 2,
         model_hash      = model_config['hash'], 
         train_hash      = train_config['hash'],
         top_dir         = args.test_dir,
@@ -166,18 +188,21 @@ if __name__ == '__main__' :
             )
         )
         tmp = load_dict(args.model_config) # avoid lambda overwrite
-        tmp['Image Encoder Summary'] = str(get_summary(
-            img_enc,
-            next(iter(train_loader))[0]
+        tmp2 = img_enc(next(iter(train_loader))[0].unsqueeze(0))
+        tmp['Spatial Encoder Summary'] = str(get_summary(
+            spt_enc,
+            tmp2
         ))
-        tmp['Image Decoder Summary'] = str(get_summary(
-            img_dec,
-            img_enc(next(iter(train_loader))[0])
+        tmp2 = spt_enc(tmp2)
+        tmp['Spatial Decoder Summary'] = str(get_summary(
+            spt_dec,
+            tmp2
         ))
         print('-- Updating model configuration file:', save_dict(tmp, args.model_config))
     except Exception as e:
         print('-- Could not compute model summary due to the following error:')
         print(e)
+        raise e
         
     train_loader = DataLoader(
         train_loader, 
@@ -228,7 +253,7 @@ if __name__ == '__main__' :
     finally:
         # Sort and update files in their corresponding folders
         housekeep(
-            1,
+            2,
             model,
             model_hash  = model_config['hash'], 
             train_hash  = train_config['hash'],

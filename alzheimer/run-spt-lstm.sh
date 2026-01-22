@@ -7,20 +7,16 @@
 TEST_VERSION=               # TestLoss  -linearly_normalized
 SEED=42
 
-LAYERS="128"            # "4096"
-NUM_GRIDS="5"               #  4
-GRID_MIN=-1.2                 # -1.2
-GRID_MAX=1.2                  #  0.25
-SCALE=1.5                   #  2
-MODE='RSWAFF'               # 'RSWAFF' 'sigmoid'
-RESIDUAL=                  # 0 / 1
-DYNAMIC=                    # 0 / 1
+IMG_HASH=e2dee2fa4e072bc524e2dc00a97d36c714ebcaaa
+TR1_HASH=9b83599ad476f9c65c69630664962819d8025be1
+
+LAYERS="128 128 128"                  
 DROPOUT=0.15
 
-EPOCHS=10000
-PATIENCE=0
-BATCH=4
-LR=7.5e-4
+EPOCHS=1000
+PATIENCE=15
+BATCH=16
+LR=5e-3
 OPTIMIZER="Adam"            # Adam RMSprop
 WEIGHT_DECAY=5e-5           # 1e-4
 MOMENTUM=                   # 0.9
@@ -34,8 +30,8 @@ dryrun=0
 verbose=0
 purge=0
 
-img_hash=
-tr1_hash=
+spt_hash=
+tr2_hash=
 
 dry_run () {
     if [ $dryrun -lt 1 ]; then
@@ -61,10 +57,10 @@ usage () {
     echo Parameters
     echo "      -h                     Prints out help"
     echo "      -s, --seed             Change the seed"
-    echo "      --residual             Set the residual flag"
-    echo "      --dynamic              Set the dynamic flag"
     echo "      --img                  If specified, the hash value of the image encoder/decoder model configuration"
+    echo "      --spt                  If specified, the hash value of the spatial encoder/decoder model configuration"
     echo "      --tr-1                 If specified, the hash value of the first training"
+    echo "      --tr-2                 If specified, the hash value of the second training"
     echo "      -d, --dryrun           Dry run of the script"
     echo "      -v, --verbose          Prints the to be executed commands"
     echo "      -p, --purge            Purges any existing output files before generating them"
@@ -91,18 +87,20 @@ while [ "$#" -gt 0 ] ; do
             shift 
             shift ;;
         --img)
-            img_hash=$2
+            IMG_HASH=$2
+            shift 
+            shift ;;
+        --spt)
+            spt_hash=$2
             shift 
             shift ;;
         --tr-1)
-            tr1_hash=$2
+            TR1_HASH=$2
             shift 
             shift ;;
-        --residual)
-            RESIDUAL=1
-            shift ;;
-        --dynamic)
-            DYNAMIC=1
+        --tr-2)
+            tr2_hash=$2
+            shift 
             shift ;;
         -*|--*=)  # unsupported flags
             echo "Error: Unsupported flag $1" >&2
@@ -119,36 +117,14 @@ eval set -- "$PARAMS"
 THIS_DIR=$(dirname $(realpath $0))
 print_exec cd $(dirname $THIS_DIR)
 
-if [ -z $img_hash ]; then
+if [ -z $spt_hash ]; then
     CONFIGS=""
+    if [ -n "$IMG_HASH" ]; then
+        CONFIGS="$CONFIGS --img $IMG_HASH"
+    fi 
     if [ -n "$LAYERS" ]; then
-        CONFIGS="$CONFIGS --layers $LAYERS"
+        CONFIGS="$CONFIGS --hidden $LAYERS"
     fi 
-    if [ -n "$NUM_GRIDS" ]; then
-        CONFIGS="$CONFIGS --num-grids $NUM_GRIDS"
-    fi 
-    if [ -n "$GRID_MIN" ]; then
-        CONFIGS="$CONFIGS --grid-min $GRID_MIN"
-    fi 
-    if [ -n "$GRID_MAX" ]; then
-        CONFIGS="$CONFIGS --grid-max $GRID_MAX"
-    fi 
-    if [ -n "$SCALE" ]; then
-        CONFIGS="$CONFIGS --scale $SCALE"
-    fi 
-
-    if [ -n "$MODE" ]; then
-        CONFIGS="$CONFIGS --mode $MODE"
-    fi 
-
-    if [[ -n "$RESIDUAL" ]] && [[ "$RESIDUAL" -gt 0 ]]; then
-        CONFIGS="$CONFIGS --residual"
-    fi 
-
-    if [[ -n "$DYNAMIC" ]] && [[ "$DYNAMIC" -gt 0 ]]; then
-        CONFIGS="$CONFIGS --dynamic"
-    fi
-
     if [[ -n "$DROPOUT" ]] && [[ "$DROPOUT" ]]; then
         CONFIGS="$CONFIGS --dropout $DROPOUT"
     fi 
@@ -156,14 +132,18 @@ if [ -z $img_hash ]; then
         CONFIGS="$CONFIGS --test-version $TEST_VERSION"
     fi 
 
-    img_hash="$THIS_DIR/create_kan_img_enc_dec.py $CONFIGS --hash --export"
-    print_verbose [EXEC] $img_hash
-    img_hash=$(dry_run $img_hash)
+    spt_hash="$THIS_DIR/create_lstm_spt_enc_dec.py $CONFIGS --hash --export"
+    print_verbose [EXEC] $spt_hash
+    spt_hash=$(dry_run $spt_hash)
 fi
-print_verbose [INFO] Image Encoder-Decoder Hash: $img_hash
+print_verbose [INFO] Spatial Encoder-Decoder Hash: $spt_hash
+print_verbose [INFO] Image Encoder-Decoder Hash: $IMG_HASH
 
-if [ -z $tr1_hash ]; then
+if [ -z $tr2_hash ]; then
     CONFIGS=""
+    if [ -n "$TR1_HASH" ]; then
+        CONFIGS="$CONFIGS --tr-1 $TR1_HASH"
+    fi
     if [ -n "$EPOCHS" ]; then
         CONFIGS="$CONFIGS --epochs $EPOCHS"
     fi
@@ -176,7 +156,6 @@ if [ -z $tr1_hash ]; then
     if [ -n "$LR" ]; then
         CONFIGS="$CONFIGS --lr $LR"
     fi
-
     if [ -n "$OPTIMIZER" ]; then
         CONFIGS="$CONFIGS --optimizer $OPTIMIZER"
     fi
@@ -186,31 +165,30 @@ if [ -z $tr1_hash ]; then
     if [ -n "$MOMENTUM" ]; then
         CONFIGS="$CONFIGS --momentum $MOMENTUM"
     fi
-
     if [ -n "$SEED" ]; then
         CONFIGS="$CONFIGS --seed $SEED"
     fi
     if [ -n "$TEST_VERSION" ]; then
         CONFIGS="$CONFIGS --test-version $TEST_VERSION"
     fi 
-
-    tr1_hash="$THIS_DIR/create_tr_1.py $CONFIGS --hash --export"
-    print_verbose [EXEC] $tr1_hash
-    tr1_hash=$(dry_run $tr1_hash)
+    tr2_hash="$THIS_DIR/create_tr_2.py $CONFIGS --hash --export"
+    print_verbose [EXEC] $tr2_hash
+    tr2_hash=$(dry_run $tr2_hash)
 fi
-print_verbose [INFO] Training Stage 1 Hash: $tr1_hash
+print_verbose [INFO] Training Stage 1 Hash: $TR1_HASH
+print_verbose [INFO] Training Stage 2 Hash: $tr2_hash
 
 if [ $dryrun -ge 1 ]; then
     test_dir=path/to/test/directory
 fi
 
-CONFIGS="-t $tr1_hash -m $img_hash"
+CONFIGS="-t $tr2_hash -m $spt_hash"
 
 if [ -n "$TEST_VERSION" ]; then
     CONFIGS="$CONFIGS --test-version $TEST_VERSION"
 fi 
-print_exec $THIS_DIR/train_1.py $CONFIGS
+print_exec $THIS_DIR/train_2.py $CONFIGS
 
-print_exec $THIS_DIR/test_1.py  $CONFIGS --epoch best
+print_exec $THIS_DIR/test_2.py  $CONFIGS --epoch best
 
-print_exec $THIS_DIR/extract_rslt_tr_1.py $CONFIGS --epoch best
+print_exec $THIS_DIR/extract_rslt_tr_2.py $CONFIGS --epoch best

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 if __name__ == '__main__' :
+
     import sys, os
     from argparse import ArgumentParser
 
@@ -18,7 +19,7 @@ if __name__ == '__main__' :
     parser.add_argument('--epoch', dest='epoch', type=str, default='best')
 
     args = parser.parse_args()
-
+    
     from build_model import *
 
     args.test_version = '_'.join(['test',args.test_version])
@@ -35,7 +36,7 @@ if __name__ == '__main__' :
         
     else:
         args.model_config = get_model_config_path(
-            training_stage  = 1,
+            training_stage  = 2,
             model_hash      = args.model_config,
             top_dir         = args.test_dir,
             test_version    = args.test_version,
@@ -52,7 +53,7 @@ if __name__ == '__main__' :
         
     else:
         args.train_config = get_train_config_path(
-            training_stage  = 1,
+            training_stage  = 2,
             train_hash      = args.train_config,
             top_dir         = args.test_dir,
             test_version    = args.test_version,
@@ -66,7 +67,7 @@ if __name__ == '__main__' :
             raise ValueError(f'Cannot locate training configuration file in specified location; got {args.train_config}')
         else :
             print(f'-- Using training configuration path "{args.train_config}"')
-                  
+                
     # import set_environment
             
     import pandas as pd
@@ -82,8 +83,6 @@ if __name__ == '__main__' :
     from prepare_dataset import build_dataset, expand_df_labels, normalize_dataset, get_groups
     from custom_dataset import AlzheimerDataset
     from extract_statistics import extract_statistics
-    from build_model import *
-
     import custom_model
 
     device = torch.device(
@@ -94,25 +93,39 @@ if __name__ == '__main__' :
     # Check configuration file validity
     train_config = load_config(args.train_config, locals=get_locals(extract_statistics))
     model_config = load_config(args.model_config, locals=get_locals(custom_model))
+    img_config   = load_config(
+        get_model_config_path(
+            training_stage  = 1,
+            model_hash      = model_config['img_hash'],
+            top_dir         = args.test_dir,
+            test_version    = args.test_version,
+        ),
+        locals=get_locals(custom_model)
+    )
 
     # Instantiate models
-    img_enc = instantiate(model_config,'img_enc')
-    img_dec = instantiate(model_config,'img_dec')
-    model   = build_train_1_model(
+    img_enc = instantiate(img_config,'img_enc')
+    img_dec = instantiate(img_config,'img_dec')
+    spt_enc = instantiate(model_config,'spt_enc')
+    spt_dec = instantiate(model_config,'spt_dec')
+    model   = build_train_2_model(
+        spt_enc = spt_enc,
+        spt_dec = spt_dec,
         img_enc = img_enc,
         img_dec = img_dec,
     )
-
+    
     # Load model state dict
-    load_train_1_model(
+    load_train_2_model(
         model,
-        img_hash    = model_config['hash'],
+        img_hash    = model_config['img_hash'],
+        spt_hash    = model_config['hash'],
         train_hash  = train_config['hash'],
         epoch       = args.epoch,
         top_dir     = args.test_dir,
         test_version= args.test_version,
     )
-
+    
     # Instantiate evaluation criteria
     eval_criteria = {
         **weak_instantiate_all(train_config['eval_criteria'])
@@ -132,11 +145,11 @@ if __name__ == '__main__' :
         normalize_dataset(expand_df_labels(build_dataset())), 
         input_cols      = model_config['input'],
         output_cols     = model_config['output'],
-        input_img_dims  = model_config['input_img_dim'],
-        output_img_dims = model_config['output_img_dim'],
+        input_img_dims  = img_config['input_img_dim'],
+        output_img_dims = img_config['output_img_dim'],
         return_key      = True, 
         path_col        = 'Path',
-        orientation     = 'same',
+        orientation     = 'y',
     )
 
     set_seed(train_config['seed'])
@@ -147,7 +160,7 @@ if __name__ == '__main__' :
         seed            = train_config['seed']
     )
     training_subdir = get_training_subdir(
-        training_stage  = 1,
+        training_stage  = 2,
         model_hash      = model_config['hash'], 
         train_hash      = train_config['hash'],
         top_dir         = args.test_dir,

@@ -21,6 +21,7 @@ def train(
     scheduler : LRScheduler,
     epochs : int,
     patience : int = None,
+    clip_limit : Union[float, bool] = None,
     history : dict[str,dict[int,dict[str,Union[float,list[float]]]]] = {},
     start_epoch = 0,
     top_dirname = './train',
@@ -52,6 +53,8 @@ def train(
     :type epochs: int
     :param patience: The number of epochs to wait before early stopping.
     :type patience: int
+    :param clip_limit: If specified and not `False`, the maximum norm of the gradients.
+    :type clip_limit: float, bool, Optional
     :param history: The training history prior to this training session.
     :type history: dict[str, dict[int, dict[str, Union[float, list[float]]]]]
     :param start_epoch: The starting epoch number.
@@ -180,12 +183,13 @@ def train(
                         
                     # Reset grads
                     optimizer.zero_grad()
+                    
                     # Calculate new grads
                     loss.backward()
                     
-                    # if _iter == 1:
-                    #     for param in model.parameters():
-                    #         print(param.grad)
+                    # Clip parameters
+                    if clip_limit is not None and bool(clip_limit):
+                        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=float(clip_limit))
                             
                     # Update weights
                     optimizer.step()

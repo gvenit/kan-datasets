@@ -8,7 +8,7 @@ sys.path.append(TOP_DIR)
 
 if __name__ == '__main__' :
     parser = ArgumentParser(
-        description='Training script for the Ship Performance Clusterring Dataset.'
+        description='Model configuration script for the Alzheimer\'s Dataset.'
     )
 
     parser.add_argument('-d', '--dest-top-directory', dest='dest_top_dir', default=os.path.join(THIS_DIR,'train'))
@@ -34,7 +34,6 @@ if __name__ == '__main__' :
     args = parser.parse_args()
 
     import torch
-    import hashlib
 
     from kan_utils.config import *
     from kan_utils.metrics import *
@@ -42,13 +41,14 @@ if __name__ == '__main__' :
     from kan_utils.utils import expand_value
     # from custom_callbacks import *
     
-    from build_model import build_train_1_model
+    from build_model import build_train_1_model, build_model_dir
 
     args.test_version = '_'.join(['test',args.test_version])
 
     model_config = {}
     model_config['input_img_dim']  = [args.input_depth, args.input_height, args.input_width]
     model_config['output_img_dim'] = [args.output_depth, args.output_height, args.output_width]
+    model_config['encoded_state']  = args.hidden_layers[-1]
     model_config['input']  = ['Path']
     model_config['output'] = ['Path']
 
@@ -71,7 +71,7 @@ if __name__ == '__main__' :
                     RangeTransform,
                     data_min          = 0,
                     data_max          = 1,
-                    target_min        = -1,
+                    target_min        =-1,
                     target_max        = 1,
                 ),
                 object_to_config(
@@ -123,18 +123,18 @@ if __name__ == '__main__' :
                     type_to_config(RangeTransform),
                     data_min          = [False, 0.],
                     data_max          = [False, 1.],
-                    target_min        = [False, 0.],
+                    target_min        = [True , 0.],
                     target_max        = [True , 1.],
                 ),
-                torch.nn.Sigmoid,
-                # torch.nn.Tanh,
-                # object_to_config(
-                #     RangeTransform,
-                #     data_min          = -1,
-                #     data_max          = 1,
-                #     target_min        = 0,
-                #     target_max        = 1,
-                # ),
+                # torch.nn.Sigmoid,
+                torch.nn.Tanh,
+                object_to_config(
+                    RangeTransform,
+                    data_min          = -1,
+                    data_max          = 1,
+                    target_min        = 0,
+                    target_max        = 1,
+                ),
                 # object_to_config(
                 #     LambdaModule,
                 #     'lambda x : torch.nn.functional.sigmoid(2*x)'
@@ -154,38 +154,13 @@ if __name__ == '__main__' :
         img_enc = img_enc,
         img_dec = img_dec,
     )
-
-    def build_img_enc_dec_dir(model, args, top_dir = None, test_version = None,):
-        pdir = os.path.join(
-            hashlib.sha1(repr(model).encode()).hexdigest(),
-            '_'.join([str(_) for _ in [args.input_width, args.input_height]]),
-            '_'.join([str(_) for _ in [args.output_width, args.output_height]]),
-            '_'.join([str(_) for _ in args.hidden_layers[:-1]]),
-            '_'.join([str(_) for _ in args.num_grids]),
-            '_'.join([
-                'm', *[str(_) for _ in args.grid_min],
-                'M', *[str(_) for _ in args.grid_max],
-                's', *[str(_) for _ in args.inv_denominator],
-            ]),
-            args.mode,
-            str(args.residual),
-            str(args.dynamic),
-        )
-        hashed = hashlib.sha1(pdir.encode()).hexdigest()
-        pdir = os.path.join('model_config', 'img_enc_dec', hashed)
-        if top_dir is not None:
-            pdir = os.path.join(top_dir,pdir)
-        if test_version is not None:
-            pdir = os.path.join(pdir,test_version)
-        return pdir, hashed
-
-    pdir, model_config['hash'] = build_img_enc_dec_dir(
+    pdir, model_config['hash'] = build_model_dir(
         model,
-        args, 
-        top_dir      = args.dest_top_dir,
-        test_version = args.test_version,
+        top_dir         = args.dest_top_dir,
+        test_version    = args.test_version,
+        training_stage  = 1,
     )
-
+    
     if args.hash:
         print(model_config['hash'])
 

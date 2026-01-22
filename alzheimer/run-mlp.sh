@@ -7,20 +7,14 @@
 TEST_VERSION=               # TestLoss  -linearly_normalized
 SEED=42
 
-LAYERS="128"            # "4096"
-NUM_GRIDS="5"               #  4
-GRID_MIN=-1.2                 # -1.2
-GRID_MAX=1.2                  #  0.25
-SCALE=1.5                   #  2
-MODE='RSWAFF'               # 'RSWAFF' 'sigmoid'
-RESIDUAL=                  # 0 / 1
-DYNAMIC=                    # 0 / 1
-DROPOUT=0.15
+LAYERS="128 128 128"            # "4096"
+ACTF='LeakyReLU'                 # 'RSWAFF' 'sigmoid'
+DROPOUT=0.25
 
-EPOCHS=10000
-PATIENCE=0
-BATCH=4
-LR=7.5e-4
+EPOCHS=1000
+PATIENCE=50
+BATCH=8
+LR=5e-4
 OPTIMIZER="Adam"            # Adam RMSprop
 WEIGHT_DECAY=5e-5           # 1e-4
 MOMENTUM=                   # 0.9
@@ -124,31 +118,9 @@ if [ -z $img_hash ]; then
     if [ -n "$LAYERS" ]; then
         CONFIGS="$CONFIGS --layers $LAYERS"
     fi 
-    if [ -n "$NUM_GRIDS" ]; then
-        CONFIGS="$CONFIGS --num-grids $NUM_GRIDS"
+    if [ -n "$ACTF" ]; then
+        CONFIGS="$CONFIGS --actf $ACTF"
     fi 
-    if [ -n "$GRID_MIN" ]; then
-        CONFIGS="$CONFIGS --grid-min $GRID_MIN"
-    fi 
-    if [ -n "$GRID_MAX" ]; then
-        CONFIGS="$CONFIGS --grid-max $GRID_MAX"
-    fi 
-    if [ -n "$SCALE" ]; then
-        CONFIGS="$CONFIGS --scale $SCALE"
-    fi 
-
-    if [ -n "$MODE" ]; then
-        CONFIGS="$CONFIGS --mode $MODE"
-    fi 
-
-    if [[ -n "$RESIDUAL" ]] && [[ "$RESIDUAL" -gt 0 ]]; then
-        CONFIGS="$CONFIGS --residual"
-    fi 
-
-    if [[ -n "$DYNAMIC" ]] && [[ "$DYNAMIC" -gt 0 ]]; then
-        CONFIGS="$CONFIGS --dynamic"
-    fi
-
     if [[ -n "$DROPOUT" ]] && [[ "$DROPOUT" ]]; then
         CONFIGS="$CONFIGS --dropout $DROPOUT"
     fi 
@@ -156,7 +128,7 @@ if [ -z $img_hash ]; then
         CONFIGS="$CONFIGS --test-version $TEST_VERSION"
     fi 
 
-    img_hash="$THIS_DIR/create_kan_img_enc_dec.py $CONFIGS --hash --export"
+    img_hash="$THIS_DIR/create_mlp_img_enc_dec.py $CONFIGS --hash --export"
     print_verbose [EXEC] $img_hash
     img_hash=$(dry_run $img_hash)
 fi

@@ -7,13 +7,14 @@
 TEST_VERSION=               # TestLoss  -linearly_normalized
 SEED=42
 
-LAYERS="128"            # "4096"
+HIDDEN="16"                  
+ENCODED="128"                
 NUM_GRIDS="5"               #  4
-GRID_MIN=-1.2                 # -1.2
-GRID_MAX=1.2                  #  0.25
-SCALE=1.5                   #  2
+GRID_MIN=-0.8                 # -1.2
+GRID_MAX=0.8                  #  0.25
+SCALE=1.25                   #  2
 MODE='RSWAFF'               # 'RSWAFF' 'sigmoid'
-RESIDUAL=                  # 0 / 1
+RESIDUAL=                   # 0 / 1
 DYNAMIC=                    # 0 / 1
 DROPOUT=0.15
 
@@ -121,8 +122,11 @@ print_exec cd $(dirname $THIS_DIR)
 
 if [ -z $img_hash ]; then
     CONFIGS=""
-    if [ -n "$LAYERS" ]; then
-        CONFIGS="$CONFIGS --layers $LAYERS"
+    if [ -n "$HIDDEN" ]; then
+        CONFIGS="$CONFIGS --hidden $HIDDEN"
+    fi 
+    if [ -n "$ENCODED" ]; then
+        CONFIGS="$CONFIGS --encoded $ENCODED"
     fi 
     if [ -n "$NUM_GRIDS" ]; then
         CONFIGS="$CONFIGS --num-grids $NUM_GRIDS"
@@ -156,7 +160,7 @@ if [ -z $img_hash ]; then
         CONFIGS="$CONFIGS --test-version $TEST_VERSION"
     fi 
 
-    img_hash="$THIS_DIR/create_kan_img_enc_dec.py $CONFIGS --hash --export"
+    img_hash="$THIS_DIR/create_imgkan_img_enc_dec.py $CONFIGS --hash --export"
     print_verbose [EXEC] $img_hash
     img_hash=$(dry_run $img_hash)
 fi
