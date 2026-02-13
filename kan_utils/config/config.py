@@ -1,9 +1,10 @@
 from typing import Iterable
 import os
-import json
 import torch
 import torchmetrics
 import copy
+import collections
+import re
 from .. import metrics
 from .. import models
 from .. import callbacks
@@ -17,6 +18,7 @@ def get_locals(*args):
     return locals_dict
 
 __cls_dict = get_locals(
+    collections,
     torch.nn,
     torch.optim,
     torch.optim.lr_scheduler,
@@ -24,8 +26,8 @@ __cls_dict = get_locals(
     torchmetrics.classification,
     torchmetrics.regression,
     torchmetrics.image,
-    metrics,
     models,
+    metrics,
     callbacks,
 )
 
@@ -51,6 +53,7 @@ def get_default_training_config() -> dict:
         'batch_size'            : 16,
         'splits'                : [0.75, 0.09, 0.16],
         'epochs'                : 100,
+        'sample_weight'         : False,
         'criterion'             : torch.nn.MSELoss,
         'criterion_args'        : (),
         'optimizer'             : torch.optim.Adagrad,
@@ -159,13 +162,11 @@ def parse_json_val(val, locals=None):
     if   isinstance(val, dict):
         return parse_json(val)
     elif isinstance(val, str):
-        if   val.isnumeric() or val.lower() in ['true','false'] or val.startswith('lambda'):
-            return eval(val)
-        elif val.startswith(('<class ', '<function ')):
+        if   val.startswith(('<class ', '<function ')):
             return find_object(val, locals)
-        try :
-            return float(val)
-        except :
+        elif re.fullmatch(r'^[+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?$',val) or val.lower() in ['true','false'] or val.startswith('lambda'):
+            return eval(val)
+        else :
             return val
     elif hasattr(val,'__iter__'):
         return [parse_json_val(val_i) for val_i in val]

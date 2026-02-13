@@ -65,11 +65,12 @@ def plot_confusion_matrix(
 def plot_img_comparison(
         gt_img, 
         pr_img, 
-        slice_axis : Literal['x','y','z']='z', 
+        slice_axis : Literal['x','y','z','h','w','c','i','j','k'] = 'z', 
         n_slices=5, 
         figsize=(15, 5), 
         cmap='gray', 
-        save_path=None
+        save_path=None,
+        axis_seq : Literal['xyz','chw','hwc','ijk'] = 'xyz',
     ):
     """
     Plot comparison of ground truth and predicted images along specified axis.
@@ -91,11 +92,16 @@ def plot_img_comparison(
     :return: Matplotlib figure and axes objects
     :rtype: tuple(matplotlib.figure.Figure, matplotlib.axes.Axes)
     """
-    axis_dict = {'x': 0, 'y': 1, 'z': 2}
-    axis = axis_dict.get(slice_axis.lower(), 2)
+    axis = axis_seq.lower().index(slice_axis.lower)
     total_slices = gt_img.shape[axis]
+    if n_slices == -1 :
+        n_slices = total_slices
     slice_indices = np.linspace(0, total_slices - 1, n_slices, dtype=int)
-    fig, axes = plt.subplots(2, n_slices, figsize=figsize)
+    
+    if total_slices in (1,3,4):
+        fig, axes = plt.subplots(2, n_slices + 1, figsize=figsize)
+    else :
+        fig, axes = plt.subplots(2, n_slices, figsize=figsize)
     for i, idx in enumerate(slice_indices):
         if axis == 0:
             gt_slice = gt_img[idx, :, :]
@@ -114,6 +120,15 @@ def plot_img_comparison(
         axes[1, i].imshow(pr_slice.T, cmap=cmap, origin='lower')
         axes[1, i].set_title(f'PR Slice {idx}', fontsize=10)
         axes[1, i].axis('off')
+        
+    if total_slices in (1,3,4):
+        axes[0,-1].imshow(gt_img.T, cmap=cmap, origin='lower')
+        axes[0,-1].set_title(f'GT Image', fontsize=10)
+        axes[0,-1].axis('off')
+        
+        axes[1,-1].imshow(pr_img.T, cmap=cmap, origin='lower')
+        axes[1,-1].set_title(f'PR Image', fontsize=10)
+        axes[1,-1].axis('off')
 
     # Set figure background colour to black
     fig.patch.set_facecolor('black')

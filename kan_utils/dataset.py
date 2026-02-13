@@ -4,10 +4,17 @@ import pandas as pd
 import numpy as np
 
 class DataFrameToDataset (Dataset): 
-    def __init__(self, df : pd.DataFrame, input_cols, output_cols, return_key = False):
+    def __init__(
+        self, 
+        df : pd.DataFrame, 
+        input_cols  : list[str], 
+        output_cols : list[str], 
+        return_weights : str = False,
+        return_key = False,
+    ):
         super().__init__()
         
-        self.index = df.index.tolist()
+        self.index  = pd.Series(df.copy().index)
         self.df = df.reset_index()
         self.input_cols, self.output_cols = input_cols, output_cols
         
@@ -15,6 +22,11 @@ class DataFrameToDataset (Dataset):
         self.i_output_cols = [self.df.columns.tolist().index(_) for _ in self.output_cols]
         
         self._return_key = return_key
+        assert not bool(return_weights) or return_weights in df.columns
+        self._return_weights = return_weights if not return_weights else self.df.columns.tolist().index(return_weights)
+        
+    def get_keys(self, index):
+        return self.index.loc[list(index)].tolist()
         
     def __len__(self) :
         return len(self.df)
@@ -23,17 +35,21 @@ class DataFrameToDataset (Dataset):
         self._return_key = return_key
     
     def __getitem__(self, index):
-        key = self.index[index]
-        data = self.df.iloc[index, self.i_input_cols].values.tolist()
-        targ = self.df.iloc[index, self.i_output_cols].values.tolist()
-        # print(data, targ)
-        if self._return_key:
-            return torch.tensor(data).float(), torch.tensor(targ).float(), key
-        return torch.tensor(data).float(), torch.tensor(targ).float()
+        return self.__getitems__([index,])[0]
     
-        # if self._return_key:
-        #     return torch.tensor(data, dtype = torch.float32), torch.tensor(targ, dtype = torch.float32), key
-        # return torch.tensor(data, dtype = torch.float32), torch.tensor(targ, dtype = torch.float32)
+    def __getitems__(self, index):
+        data = self.df.iloc[index, self.i_input_cols].values #.tolist()
+        targ = self.df.iloc[index, self.i_output_cols].values#.tolist()
+        
+        to_zip = (torch.tensor(data).float(), torch.tensor(targ).float(),)
+        
+        if self._return_weights:
+            to_zip += torch.tensor(self.df.iloc[index, [self._return_weights,]].values).float(),
+        
+        if self._return_key:
+            to_zip += self.get_keys(index),
+
+        return [_ for _ in zip(*to_zip)]
     
 def group(df : pd.DataFrame, indices = None, labels = None, label_dict = {}):
     '''A grouper for datasets with categorical data.
@@ -106,7 +122,7 @@ def split_dataset(splits, full_dataset, seed = None):
         generator.manual_seed(seed)
     return random_split(full_dataset, splits, generator=generator)
     
-def smart_split_indices(splits: list[float], full_dataset, groups:dict[str, list] | dict[str, dict], seed = None):
+def smart_split_dataset(splits: list[float], full_dataset, groups:dict[str, list] | dict[str, dict], seed = None):
     '''A method for randomly splitting indices for grouped data.
     
     Args
@@ -146,7 +162,7 @@ def smart_split_indices(splits: list[float], full_dataset, groups:dict[str, list
     sets = [[] for _ in splits]
     for key, val in groups.items():
         if isinstance(val, dict):
-            subsets = smart_split_indices(splits, None, val, seed)
+            subsets = smart_split_dataset(splits, None, val, seed)
         else :
             subsets = split_dataset(splits, val, seed)
             subsets = [[val[_] for _ in subset.indices] for subset in subsets]

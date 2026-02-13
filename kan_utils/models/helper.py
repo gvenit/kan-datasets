@@ -1,3 +1,4 @@
+from typing import overload, Literal, Mapping, Callable, Iterable, Any, TypeVar, Generic
 import torch
 import torch.nn as nn
 
@@ -8,31 +9,30 @@ class SubBatch(nn.Module):
 
     :param input_data_dim: The position of the firt input data dimension.
     :type input_data_dim: int
-    :param output_data_dim: The position of the firt output data (result) dimension.
-    :type output_data_dim: int
     :param model: The model to wrap around
     :type model: Callable
     '''
-    def __init__(self, input_data_dim, output_data_dim, model):
+    def __init__(self, input_data_dim, output_data_dim = None,  model = None):
         super(SubBatch,self).__init__()
         
         self.model = model
         self.input_data_dim  = int(input_data_dim)
-        self.output_data_dim = int(output_data_dim)
+        
+    def extra_repr(self):
+        return f"input_data_dim={self.input_data_dim}"
         
     def forward(self, x : torch.Tensor, *args, **kwargs):
-        # print(x.shape, self.input_data_dim,x.shape[:self.input_data_dim], x.shape[self.input_data_dim:])
         batch_shape = x.shape[:self.input_data_dim]
         x = x.reshape(-1, *x.shape[self.input_data_dim:])
         x = self.model(x, *args, **kwargs)
         
         if isinstance(x, tuple):
             x, *args = x
-            x = x.reshape(*batch_shape, *x.shape[self.output_data_dim:])
+            x = x.reshape(*batch_shape, *x.shape[1:])
             x = x, *args
             
         else :
-            x = x.reshape(*batch_shape, *x.shape[self.output_data_dim:])
+            x = x.reshape(*batch_shape, *x.shape[1:])
             
         return x
 
@@ -52,6 +52,9 @@ class Reshaper(nn.Module):
         
         assert len(torch.empty(self.input_data_shape).reshape(-1)) == len(torch.empty(self.output_data_shape).reshape(-1)),\
             f"Total number of elements missmatch; {len(torch.empty(self.input_data_shape).reshape(-1))} != {len(torch.empty(self.output_data_shape).reshape(-1))}"
+        
+    def extra_repr(self):
+        return f"input_data_shape={self.input_data_shape}, output_data_shape={self.output_data_shape}"
         
     def forward(self, x : torch.Tensor):
         batch_shape = x.shape[:-len(self.input_data_shape)]
@@ -130,3 +133,78 @@ class Parameterizer(nn.Module):
     def forward(self, *args, **kwargs):
         return self.module(*args, **kwargs)
         
+class MultiHead(nn.Module):
+    '''
+    Apply multiple modules to the same input.
+    '''
+    @overload
+    def __init__(
+        self , 
+        *args : Iterable[Callable],
+        return_type : Literal['dict', 'list'] = 'list',
+    ):
+        '''
+        :param args: Iterable of models to apply
+        :type args: Iterable[Callable]
+        '''
+        ...
+        
+    @overload
+    def __init__(
+        self , 
+        args : Mapping[str, Callable],
+        return_type : Literal['dict', 'list'] = 'dict',
+        ):
+        '''
+        :param args: Mapping of models to apply
+        '''
+        ...
+        
+    def __init__(
+        self, 
+        *args,
+        return_type : Literal['dict', 'list'] = 'list',
+        ):
+        super().__init__()
+        if return_type in ('dict','list'):
+            self.return_type = return_type
+        else :
+            raise NotImplementedError(f'Return type "{return_type}" is not supported.')
+        
+        if isinstance(args[0], Mapping):
+            self.heads = nn.ModuleDict(args[0])
+            
+        else :
+            self.heads = nn.ModuleList(args)
+           
+    def __getattr__(self, name):
+        try:
+            return super().__getattr__(name)
+        except AttributeError:
+            pass
+        return getattr(self.heads, name)
+       
+    # def to(self, device):
+    #     # print('MultiHead called device.')
+    #     self.heads = self.heads.to(device)
+    #     return super().to(device)
+            
+    def forward(self, *args, **kwargs):
+        output = tuple(
+            head(*args,**kwargs)
+                for head in (
+                    self.heads if isinstance(self.heads, nn.ModuleList) else 
+                    self.heads.values() 
+                )
+        )
+        if self.return_type == 'list' :
+            return output
+        elif self.return_type == 'dict':
+            keys = self.heads.keys() if isinstance(self.heads, nn.ModuleDict) else [
+                f'head.{_iter}' for _iter in range(len(self.heads))
+            ]
+            return {
+                key : val for key, val in zip(keys, output)
+            }
+        else :
+            raise NotImplementedError(f'Return type "{self.return_type}" is not supported.')

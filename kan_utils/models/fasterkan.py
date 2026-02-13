@@ -504,12 +504,14 @@ class FasterKAN(nn.Module):
         mode : Literal['RSWAFF','tanh','tanh2','gaussian', 'sigmoid','square','triangle','sample'] = 'RSWAFF',
         residual : list[bool] = False,
         dynamic : bool = False,
+        normalize : bool = True,
         dropout_rate: Optional[float] = None,
     ):
         super(FasterKAN, self).__init__()
 
         self.train_grid = True
         self.train_inv_denominator = True
+        self.dropout_rate = dropout_rate
         
         num_grids       = expand_value(num_grids,       len(hidden_layers)-1)
         grid_min        = expand_value(grid_min,        len(hidden_layers)-1)
@@ -544,7 +546,7 @@ class FasterKAN(nn.Module):
                 num_grids             = num_grids_i,
                 inv_denominator       = inv_denominator_i,
                 mode                  = mode,
-                dropout_rate          = dropout_rate,
+                dropout_rate          = self.dropout_rate,
             ) for _iter, (
                 num_grids_i, 
                 in_dim, 
@@ -561,6 +563,14 @@ class FasterKAN(nn.Module):
                 inv_denominator,
             ))
         ])
+        if normalize and len(hidden_layers) > 2:
+            self.normalize = nn.ModuleList([
+                nn.LayerNorm(
+                    out_dim
+                ) for out_dim in hidden_layers[1:-1]
+            ])
+        else :
+            self.normalize = False
 
     def extra_repr(self) -> str:
         """
@@ -597,11 +607,13 @@ class FasterKAN(nn.Module):
         Returns:
             torch.Tensor: Output tensor [batch_size, output_dim]
         """
-        for layer, res in zip(self.layers, self.residual):
+        for _iter, (layer, res) in enumerate(zip(self.layers, self.residual)):
             if res:
                 x = layer(x) + x
             else :
                 x = layer(x)
+            if self.normalize and len(self.normalize) > _iter:
+                x = self.normalize[_iter](x)
         return x
     
 # # @torch.compile

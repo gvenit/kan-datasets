@@ -8,6 +8,7 @@ def get_summary(
     model: torch.nn.Module,
     input_data : torch.Tensor,
     dest = None,
+    depth : int = 3,
 ) -> ModelStatistics :
     """
     Saves the attributes and details of a PyTorch model to a text file, including
@@ -20,6 +21,8 @@ def get_summary(
         The model to summarize. Model will be casted to evaluation mode.
     dataset : torch.Tensor
         A dataset containing input
+    depth : int
+        The maximum allowed depth of nested layers to report.
 
     Returns
     -------
@@ -33,6 +36,7 @@ def get_summary(
     model: torch.nn.Module,
     input_data : torch.Tensor,
     dest : str,
+    depth : int = 3,
 ) -> str:
     """
     Saves the attributes and details of a PyTorch model to a text file, including
@@ -47,6 +51,8 @@ def get_summary(
         A dataset containing input
     dest: str
         The path to save the model summary.
+    depth : int
+        The maximum allowed depth of nested layers to report.
 
     Returns
     -------
@@ -59,11 +65,13 @@ def get_summary(
     model: torch.nn.Module,
     input_data : torch.Tensor,
     dest = None,
+    depth : int = 3,
 ):
     model_summary = summary(
         model, 
-        input_data  = input_data.unsqueeze(0), 
+        input_data  = input_data.clone().unsqueeze(0), 
         verbose     = 0,
+        depth       = depth
     )
     
     if dest is None:

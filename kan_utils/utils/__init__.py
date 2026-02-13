@@ -1,7 +1,9 @@
+from typing import Mapping
 import torch
 from torch.nn import Module
 import os, json
 import numpy as np
+
 
 def save_model(model: Module, fname:str, device = torch.device('cpu')):
     if os.path.splitext(fname)[-1] not in ('.pt','.pth'):
@@ -52,3 +54,103 @@ def expand_value(val, size):
     return val
 
 uses_momentum = lambda optimizer : optimizer in ('SGD', 'RMSprop')
+
+def isnested(x):
+    return not (hasattr(x,'__iter__') and isinstance(x,torch.Tensor))
+
+def nested2dict(x) :
+    if isinstance(x, torch.Tensor):
+        return x
+    elif isinstance(x, Mapping):
+        return {key : nested2dict(val) for key,val in x.items()}
+    elif hasattr(x, '__iter__'):
+        if isinstance(x[0], torch.Tensor):
+            return x
+        return {f'arg.{_iter}' : nested2dict(val) for _iter, val in enumerate(x)}
+    else :
+        raise NotImplementedError(f'Cannot convert type "{type(x)}" to dict')
+
+def apply_to_tensor(
+    x,
+    method : str,
+    *args,
+    **kwargs
+):
+    if isinstance(x, (torch.Tensor, torch.nn.Module)):
+        return getattr(x,method)(*args, **kwargs)
+    elif isinstance(x, Mapping):
+        return type(x)(**{
+            key : apply_to_tensor(val, method, *args, **kwargs)
+            for key, val in x.items()
+        })
+    elif hasattr(x, '__iter__'):
+        return type(x)([
+            apply_to_tensor(val, method, *args, **kwargs)
+            for val in x
+        ])
+    else :
+        raise NotImplementedError(f'Function "{method}" does not support type {type(x)}')
+
+def to(
+    x,
+    device = None,
+    dtype = None,
+    non_blocking = False,
+    copy = False,
+    memory_format = None,
+):
+    kwargs = {
+        'device' : device,
+        'dtype' : dtype,
+        'non_blocking' : non_blocking,
+        'copy' : copy,
+        'memory_format' : memory_format,
+    }
+    return apply_to_tensor(x, 'to', **kwargs)
+    # if isinstance(x, (torch.Tensor, torch.nn.Module)):
+    #     return x.to(**kwargs)
+    # elif isinstance(x, Mapping):
+    #     return type(x)(**{
+    #         key : to(val, **kwargs)
+    #         for key, val in x.items()
+    #     })
+    # elif hasattr(x, '__iter__'):
+    #     return type(x)(*[
+    #         to(val, **kwargs)
+    #         for val in x
+    #     ])
+    # else :
+    #     raise NotImplementedError(f'Function "to" does not support type {type(x)}')
+
+def tolist(x):
+    return apply_to_tensor(x, 'tolist')
+    # if isinstance(x, torch.Tensor):
+    #     return x.tolist()
+    # elif isinstance(x, Mapping):
+    #     return type(x)(**{
+    #         key : tolist(val)
+    #         for key, val in x.items()
+    #     })
+    # elif hasattr(x, '__iter__'):
+    #     return type(x)(*[
+    #         tolist(val)
+    #         for val in x
+    #     ])
+    # else :
+    #     raise NotImplementedError(f'Function "to" does not support type {type(x)}')
+
+def cat(x : list[list[torch.Tensor],dict[str,torch.Tensor]], dim: int = 0,):
+    if isinstance(x[0], Mapping):
+        return type(x[0])(**{
+            key : torch.cat([val[key] for val in x], dim=dim) 
+                for key in x[0].keys()
+        })
+    elif isinstance(x[0], torch.Tensor):
+        return torch.cat(x, dim=dim)
+    elif hasattr(x[0], '__iter__'):
+        return type(x[0])(*[
+            torch.cat([val[_iter] for val in x], dim=dim)
+                for _iter in range(len(x[0]))
+        ])
+    else :
+        raise NotImplementedError(f'Function "cat" does not support type {type(x)}')

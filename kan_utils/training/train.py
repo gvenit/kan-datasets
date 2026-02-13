@@ -9,7 +9,7 @@ import numpy as np
 import os
 
 from .evaluate import evaluate, get_callable_basis
-from ..utils import save_model, load_model, save_dict
+from ..utils import save_model, load_model, save_dict, to, tolist
 
 def train(
     model : Module,
@@ -21,13 +21,15 @@ def train(
     scheduler : LRScheduler,
     epochs : int,
     patience : int = None,
+    sample_weight : bool = False,
     clip_limit : Union[float, bool] = None,
     history : dict[str,dict[int,dict[str,Union[float,list[float]]]]] = {},
     start_epoch = 0,
+    update_limit : bool | int | float = True,
     top_dirname = './train',
     device = torch.device('cpu'),
     evaluate_training = False,
-    saving_steps : int = 1,
+    saving_steps : int | Literal['log'] = 1,
     show_pbar : Literal[None, 'external','internal'] = 'external',
     callbacks = get_callable_basis(),
     callbacks_arguments : dict[str, Any] = {},
@@ -53,12 +55,16 @@ def train(
     :type epochs: int
     :param patience: The number of epochs to wait before early stopping.
     :type patience: int
+    :param sample_weight: If `True`, calculate the weighted criterion. Default : `False`
+    :type sample_weight: bool, Optional
     :param clip_limit: If specified and not `False`, the maximum norm of the gradients.
     :type clip_limit: float, bool, Optional
     :param history: The training history prior to this training session.
     :type history: dict[str, dict[int, dict[str, Union[float, list[float]]]]]
     :param start_epoch: The starting epoch number.
     :type start_epoch: int
+    :param update_limit: If specified, apply a limit to progress bar updates. Positive integers are treated as update periods. Floats are treated as percentile update periods. Default: `1000`
+    :type update_limit: bool, int, float, Optional
     :param top_dirname: The top directory to save training results.
     :type top_dirname: str
     :param device: The device to be used for training.
@@ -99,6 +105,9 @@ def train(
         }
     
     patience_counter = 0
+    if isinstance(saving_steps, int):
+        _saving_steps = saving_steps
+        
     
     os.makedirs(top_dirname, exist_ok=True)
     model_dirname = os.path.join(top_dirname, 'models')
@@ -111,17 +120,30 @@ def train(
         
     descr = 'Epoch {epoch} -- Tr Loss {tr_loss:.5f} -- Val Loss {val_loss:.5f} -- Best {best_loss:.5f}'
     
+    if update_limit:
+        if 0 < update_limit <= 1. :
+            update_period = len(train_dataloader) // int(1/update_limit)
+        elif isinstance(update_limit, int) and update_limit > 0:
+            update_period = len(train_dataloader) // update_limit
+        else :
+            update_period = len(train_dataloader) // 1000
+    else :
+        update_period = 1 
+    
     try :
         for epoch in pbar_epoch:
             hist_train_epoch = {}
             tr_loss = 0.
             
-            model.train()
+            model.train().to(device)
             
             if show_pbar == 'internal':
                 pbar_iter = tqdm(train_dataloader, dynamic_ncols=True)
             else:
                 pbar_iter = train_dataloader
+                
+            if saving_steps == 'log':
+                _saving_steps = int(np.ceil(2*np.log(epoch))+1)
                 
             loc_kwargs = {
                 'model'            : model,
@@ -142,16 +164,25 @@ def train(
                 callback(**loc_kwargs)
 
             try :
-                for _iter, (data, target) in enumerate(pbar_iter, start=1):
-                    if isinstance(data, tuple):
-                        data = (_.to(device) for _ in data)
-                    else :
-                        data = data.to(device)
-                        
-                    if isinstance(data, tuple):
-                        target = (_.to(device) for _ in target)
-                    else :
-                        target = target.to(device)
+                criterion.to(device)
+            except:
+                pass
+
+            try :
+                if show_pbar == 'external':
+                    pbar_epoch.set_description(descr.format(epoch=f"{epoch}[{0}/{len(pbar_iter)}]", tr_loss=tr_loss, val_loss=val_loss, best_loss=best_loss))
+                   
+                for _iter, (data, target, *weights) in enumerate(pbar_iter, start=1):
+                    data    = to(data, device)
+                    target  = to(target, device)
+                    
+                    if sample_weight:
+                        if len(weights) == 1:
+                            weights = weights[0].to(device)
+                        elif isinstance(data, tuple):
+                            weights = torch.ones_like(target[0])
+                        else :
+                            weights = torch.ones_like(target)
                     
                     loc_kwargs = {
                         'model'            : model,
@@ -170,12 +201,19 @@ def train(
 
                     prediction = model(data)
                     
-                    loss : torch.Tensor = criterion(prediction,target)
+                    if sample_weight:
+                        loss : torch.Tensor = criterion(prediction,target,weights)
+                    else :
+                        loss : torch.Tensor = criterion(prediction,target)
                     
                     if np.isnan(loss.detach().cpu()) :
-                        data = data.cpu()
-                        target = target.cpu()
-                        print(data, target, loss)
+                        data    = to(data, 'cpu')
+                        target  = to(target, 'cpu')
+                        prediction  = to(prediction, 'cpu')
+                        
+                        print(tolist(data), tolist(target), tolist(prediction), loss, sep='\n', file=open(
+                            os.path.join(top_dirname,'error.log'),'w'
+                        ))
                         save_dict(history, os.path.join(model_dirname,'history'))
                         raise ValueError(f'Encountered NaN value at epoch {epoch}')
                     else :
@@ -208,10 +246,11 @@ def train(
                     for callback in callbacks['train_iter_end']:
                         callback(**loc_kwargs)
                         
-                    if show_pbar == 'internal':
-                        pbar_iter.set_description(descr.format(epoch=epoch, tr_loss=tr_loss/_iter, val_loss=val_loss, best_loss=best_loss))
-                    elif show_pbar == 'external':
-                        pbar_epoch.set_description(descr.format(epoch=epoch, tr_loss=tr_loss/_iter, val_loss=val_loss, best_loss=best_loss))
+                    if _iter % update_period == 0:
+                        if show_pbar == 'internal':
+                            pbar_iter.set_description(descr.format(epoch=epoch, tr_loss=tr_loss/_iter, val_loss=val_loss, best_loss=best_loss))
+                        elif show_pbar == 'external':
+                            pbar_epoch.set_description(descr.format(epoch=f"{epoch}[{_iter}/{len(pbar_iter)}]", tr_loss=tr_loss/_iter, val_loss=val_loss, best_loss=best_loss))
                    
                 del data, target, prediction, loss
                     
@@ -241,9 +280,10 @@ def train(
                         evaluate(
                             model           = model, 
                             eval_dataloader = train_dataloader, 
-                            eval_criteria   = eval_criteria, 
+                            criteria        = eval_criteria, 
+                            sample_weight   = sample_weight,
                             device          = device, 
-                            show_pbar       = False,
+                            show_pbar       = show_pbar == 'internal',
                             callbacks       = callbacks,
                             callbacks_arguments = {
                                 'epoch' : epoch,
@@ -256,8 +296,9 @@ def train(
                     model, 
                     eval_dataloader = eval_dataloader, 
                     criteria        = eval_criteria, 
+                    sample_weight   = sample_weight,
                     device          = device, 
-                    show_pbar       = False,
+                    show_pbar       = show_pbar == 'internal',
                     callbacks       = callbacks,
                     callbacks_arguments = {
                         'epoch'  : epoch,
@@ -277,7 +318,7 @@ def train(
                 elif show_pbar == 'external':
                     pbar_epoch.set_description(descr.format(epoch=epoch, tr_loss=tr_loss, val_loss=val_loss, best_loss=best_loss))
                     
-                if saving_steps > 0 and (epoch % saving_steps == 0):
+                if _saving_steps > 0 and (epoch % _saving_steps == 0):
                     save_model(model, os.path.join(model_dirname,'last'), device)
                     save_dict(history, os.path.join(top_dirname,'history'))
                 
@@ -344,7 +385,11 @@ def train(
             callback(**loc_kwargs)
             
         save_model(model, os.path.join(model_dirname,'last'), device)
-        save_dict(history, os.path.join(top_dirname,'history'))
+        try:
+            save_dict(history, os.path.join(top_dirname,'history'))
+        except Exception as e:
+            print(history)
+            raise e
         
         if 'data' in locals():
             del data
@@ -375,7 +420,7 @@ def train(
     for callback in callbacks['training_finished']:
         callback(**loc_kwargs)
         
-    if saving_steps < 1 or (epoch % saving_steps != 0):
+    if _saving_steps < 1 or (epoch % _saving_steps != 0):
         save_model(model, os.path.join(model_dirname,'last'), device)
         save_dict(history, os.path.join(top_dirname,'history'))
         
