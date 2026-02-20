@@ -208,9 +208,9 @@ def evaluate(
                         metrics[name] = criterion(prediction, target)
                 else :
                     metrics[name] = criterion(prediction, target)
-                    
-            except :
-                pass
+            except Exception as e:
+                # pass
+                print(f'Warning -- {name}:',e)
             
             try :
                 metrics[name] = tolist(to(metrics[name], device=device, dtype=torch.float64))
@@ -236,7 +236,6 @@ def evaluate(
         if isnested(prediction):
             prediction = nested2dict(prediction)
             target     = nested2dict(target)
-            print()
             df  = pd.DataFrame.from_dict({
                 'Index' : keys,
                 **{

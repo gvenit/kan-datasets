@@ -1,7 +1,7 @@
 from .fasterkan import FasterKAN, FasterKANLayer, DynamicFasterKANLayer
 from .fft import NNFFT, RNNFFT, OptimisedRNNFFT
 from .helper import SubBatch, Reshaper, RangeTransform, Parameterizer, MultiHead
-from .actf import LambdaModule, RSWAFF
+from .actf import LambdaModule, RSWAFF, PReLUGlobalParam
 
 __all__ = [
     'DynamicFasterKANLayer',
@@ -10,6 +10,7 @@ __all__ = [
     'LambdaModule',
     'MultiHead',
     'NNFFT', 
+    'PReLUGlobalParam',
     'RNNFFT', 
     'OptimisedRNNFFT', 
     'SubBatch',

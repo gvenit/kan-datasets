@@ -19,3 +19,12 @@ class RSWAFF(nn.Module):
         
     def forward(self, x):
         return torch.ones_like(x) - self.tanh(x) ** 2
+
+class PReLUGlobalParam(nn.Module):
+    """PReLU with a single learnable parameter for all channels"""
+    def __init__(self, init=0.25):
+        super(PReLUGlobalParam, self).__init__()
+        self.prelu = nn.PReLU(num_parameters=1, init=init)
+        
+    def forward(self, x):
+        return self.prelu(x)

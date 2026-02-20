@@ -23,9 +23,11 @@ class ProcessAndApplyMetric(torch.nn.Module):
         else :
             return getattr(self.metric, name)
         
-    def forward(self, input, target):
-        return self.metric(
-            self.pred_apply(input),
-            self.targ_apply(target),
-        )
+    def forward(self, input, target, *args, **kwargs):
+        return self.metr_apply(
+            self.metric(
+                self.pred_apply(input),
+                self.targ_apply(target),
+                *args, **kwargs
+        ))
     

@@ -52,6 +52,30 @@ from ..utils import expand_value
 
 USE_BIAS_ON_LINEAR = False  # NOTE: Bias must be false to be able to implement on fpga
 
+class RadialBasisFunction(nn.Module):
+    def __init__(self, mode):
+        super(RadialBasisFunction, self).__init__()
+        self.mode = mode
+        if   self.mode == 'RSWAFF':
+            from ..models import RSWAFF
+            self.rbf = RSWAFF()
+        elif self.mode == 'PReLU':
+            from ..models import PReLUGlobalParam
+            self.rbf = PReLUGlobalParam()
+        elif self.mode == 'tanh2':
+            self.rbf = lambda x : torch.nn.functional.tanh(x) ** 2
+        elif self.mode == 'gaussian':
+            self.rbf = lambda x : torch.exp(-(x**2))
+        elif self.mode == 'sample':
+            self.rbf = lambda x, guard=1e-8 : torch.sin(x+guard) / (x+guard)
+        elif hasattr(torch.nn, self.mode):
+            self.rbf = getattr(torch.nn, self.mode)()
+        else :
+            raise ValueError(f"Mode is not implemented; got '{self.mode}'")
+        
+    def forward(self, x):
+        return self.rbf(x)
+
 class RSWAFFunction(Function):
     """
     Autograd function for Radial Spline Wavelet Activation Function.
@@ -222,24 +246,7 @@ class RSFAuto(nn.Module):
         self.grid = torch.nn.Parameter(grid, requires_grad=train_grid)
         self.inv_denominator = torch.nn.Parameter(torch.tensor(inv_denominator).float(), requires_grad=train_inv_denominator)  # Cache the inverse of the denominator
         self.mode = mode
-        if   self.mode == 'RSWAFF':
-            self.rbf = lambda x : 1 - torch.nn.functional.tanh(x) ** 2
-        elif self.mode == 'tanh':
-            self.rbf = lambda x : torch.nn.functional.tanh(x)
-        elif self.mode == 'tanh2':
-            self.rbf = lambda x : torch.nn.functional.tanh(x) ** 2
-        elif self.mode == 'gaussian':
-            self.rbf = lambda x : torch.exp(-(x**2))
-        elif self.mode == 'sigmoid':
-            self.rbf = lambda x : torch.nn.functional.sigmoid(x)
-        # elif self.mode == 'square':
-        #     self.rbf = lambda x, threshold=0.5 : torch.where(x.abs() < threshold, 1., 0.)
-        # elif self.mode == 'triangle':
-        #     self.rbf = lambda x, threshold=0.5 : torch.where(x.abs() < threshold, -x, 0.)
-        elif self.mode == 'sample':
-            self.rbf = lambda x, guard=1e-8 : torch.sin(x+guard) / (x+guard)
-        else :
-            raise ValueError(f"Mode is not implemented; got '{self.mode}'")
+        self.rbf = RadialBasisFunction(self.mode)
 
     def extra_repr(self) -> str:
         """
@@ -289,20 +296,7 @@ class DynamicRSFAuto(nn.Module):
             dropout_rate            = 0.,
         )
         self.mode = mode
-        if   self.mode == 'RSWAFF':
-            self.rbf = lambda x : 1 - torch.nn.functional.tanh(x) ** 2
-        elif self.mode == 'tanh':
-            self.rbf = lambda x : torch.nn.functional.tanh(x)
-        elif self.mode == 'tanh2':
-            self.rbf = lambda x : torch.nn.functional.tanh(x) ** 2
-        elif self.mode == 'gaussian':
-            self.rbf = lambda x : torch.exp(-(x**2))
-        elif self.mode == 'sigmoid':
-            self.rbf = lambda x : torch.nn.functional.sigmoid(x)
-        elif self.mode == 'sample':
-            self.rbf = lambda x, guard=1e-8 : torch.sin(x+guard) / (x+guard)
-        else :
-            raise ValueError(f"Mode is not implemented; got '{self.mode}'")
+        self.rbf = RadialBasisFunction(self.mode)
         
         self.drop = nn.Dropout(0.5 if dropout_rate is None else dropout_rate) 
 
@@ -563,11 +557,11 @@ class FasterKAN(nn.Module):
                 inv_denominator,
             ))
         ])
-        if normalize and len(hidden_layers) > 2:
+        if normalize and len(hidden_layers) >= 2:
             self.normalize = nn.ModuleList([
                 nn.LayerNorm(
-                    out_dim
-                ) for out_dim in hidden_layers[1:-1]
+                    in_dim
+                ) for in_dim in hidden_layers[:-1]
             ])
         else :
             self.normalize = False
@@ -608,12 +602,12 @@ class FasterKAN(nn.Module):
             torch.Tensor: Output tensor [batch_size, output_dim]
         """
         for _iter, (layer, res) in enumerate(zip(self.layers, self.residual)):
+            if self.normalize :
+                x = self.normalize[_iter](x)
             if res:
                 x = layer(x) + x
             else :
                 x = layer(x)
-            if self.normalize and len(self.normalize) > _iter:
-                x = self.normalize[_iter](x)
         return x
     
 # # @torch.compile
