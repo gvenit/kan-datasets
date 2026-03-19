@@ -18,10 +18,11 @@ if __name__ == '__main__':
     parser.add_argument('--grid-min', dest='grid_min', action='extend', nargs="+")
     parser.add_argument('--grid-max', dest='grid_max', action='extend', nargs="+")
     parser.add_argument('--scale','--inv_denominator', dest='scale', action='extend', nargs="+")
-    parser.add_argument('--mode', dest='mode', type=str, default='RSWAFF')
+    parser.add_argument('--mode', dest='mode', type=str, default='custom')
     parser.add_argument('--residual', dest='residual', action='store_true')
     parser.add_argument('--dynamic', dest='dynamic', action='store_true')
     parser.add_argument('--dropout', dest='dropout', type=float, default=0.5)
+    parser.add_argument('--no-normalize', dest='normalize', action='store_false')
     parser.add_argument('--patience', dest='patience', default=10)
     parser.add_argument('--epochs', dest='epochs', default=500)
     parser.add_argument('--batch', '--batch-size', dest='batch_size', type=int, default=16)
@@ -43,7 +44,7 @@ if __name__ == '__main__':
     from kan_utils.config import *
     from kan_utils.metrics import *
     from kan_utils.callbacks import *
-    from kan_utils.models import FasterKAN
+    from kan_utils.models import *
     from kan_utils.utils import uses_momentum
 
     features = [
@@ -107,13 +108,26 @@ if __name__ == '__main__':
                         grid_min          = args.grid_min,
                         grid_max          = args.grid_max,
                         inv_denominator   = args.scale,
-                        mode              = args.mode,
+                        mode              = args.mode if args.mode != 'custom' else object_to_config(
+                                                # torch.nn.PReLU,
+                                                # init = 0.01
+                                                torch.nn.Sequential,
+                                                RSWAFF,
+                                                object_to_config(
+                                                    Parameterizer,
+                                                    module = type_to_config(RangeTransform),
+                                                    data_min    = (False, 0.),
+                                                    data_max    = (False, 1.),
+                                                    target_min  = (False, 0.),
+                                                    target_max  = ( True, 1.),
+                                                )
+                                            ),
                         residual          = args.residual,
                         dynamic           = args.dynamic,
-                        **object_to_config(
+                        normalize         = args.normalize,
+                        dropout_rate      = object_to_config(
                             UpdatableFloat,
-                            0,
-                            target_name   = 'dropout_rate'
+                            args.dropout,
                         )
                     ),
                 ],
@@ -210,13 +224,50 @@ if __name__ == '__main__':
             target_name     = 'AUROC',
         ),
     }
-    train_config['callbacks']['train_iter_start'].append(
+    train_config['callbacks_arguments'].update({
+        **object_to_config(
+            GatherStatistics,
+            input_cols  = model_config['input'],
+            output_cols = model_config['output'],
+            task        = train_config['task'],
+            export_path = os.path.join(THIS_DIR,'dataset','tr_statistics.csv'),
+            target_name = 'train_gatherer',
+        ),
+        **object_to_config(
+            GatherStatistics,
+            input_cols  = model_config['input'],
+            output_cols = model_config['output'],
+            task        = train_config['task'],
+            export_path = os.path.join(THIS_DIR,'dataset','val_statistics.csv'),
+            overwrite   = 1,
+            target_name = 'val_gatherer',
+        ),
+    })
+    train_config['callbacks']['train_iter_start'].extend([
+        # object_to_config(
+        #     'lambda *args, model=None, iteration=0, epoch=0, epochs=1, dataloader=None, **kwargs : model._modules["kan"].dropout_rate.set('
+        #         f'{args.dropout} * torch.sigmoid( torch.tensor( ((epoch + (iteration / len(dataloader)) - {int(args.epochs) / 2}) / {int(args.epochs) / 4}) )).item()'
+        #     ')'
+        # ),
         object_to_config(
-            'lambda *args, model=None, iteration=0, epoch=0, epochs=1, dataloader=None, **kwargs : model._modules["kan"].dropout_rate.set('
-                f'{args.dropout} * torch.sigmoid( torch.tensor( ((epoch + (iteration / len(dataloader)) - {int(args.epochs) / 2}) / {int(args.epochs) / 4}) )).item()'
-            ')'
-        )
-    )
+            'lambda *args, train_gatherer=None, **kwargs: train_gatherer(*args,**kwargs)',
+        ),
+    ])
+    train_config['callbacks']['train_end'].extend([
+        object_to_config(
+            'lambda *args, train_gatherer=None, **kwargs: train_gatherer.finalize(*args,**kwargs)',
+        ),
+    ])
+    train_config['callbacks']['eval_iter_start'].extend([
+        object_to_config(
+            'lambda *args, val_gatherer=None, **kwargs: val_gatherer(*args,**kwargs)',
+        ),
+    ])
+    train_config['callbacks']['eval_metrics_start'].extend([
+        object_to_config(
+            'lambda *args, val_gatherer=None, **kwargs: val_gatherer.finalize(*args,**kwargs)',
+        ),
+    ])
     def build_test_dir(train_config, model_config, top_dir = None, test_version = None):
         pdir = os.path.join(
             '_'.join(['_'.join([key, str(val)]) for key, val in train_config.items()]),

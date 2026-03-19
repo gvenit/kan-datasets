@@ -4,12 +4,11 @@ from torch.nn import Module
 import os, json
 import numpy as np
 
-
 def save_model(model: Module, fname:str, device = torch.device('cpu')):
     if os.path.splitext(fname)[-1] not in ('.pt','.pth'):
         fname = f'{fname}.pt'
     torch.save(
-        model.state_dict(),
+        model.cpu().state_dict(),
         fname
     )
     model.to(device)
@@ -49,6 +48,7 @@ def expand_value(val, size):
 
     if len(val) < size:
         val = val + [val[-1] for _ in range(size-len(val))]
+    val = val[:size]
 
     assert len(val) == size, f"Size missmatch; expected size {size}; got {len(val)} \n {val}"
     return val

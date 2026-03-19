@@ -8,6 +8,7 @@ import re
 from .. import metrics
 from .. import models
 from .. import callbacks
+from .. import utils
 from ..training import get_callable_basis
 from ..utils import save_dict, load_dict
 
@@ -29,6 +30,7 @@ __cls_dict = get_locals(
     models,
     metrics,
     callbacks,
+    utils,
 )
 
 def get_default_model_config() -> dict:
@@ -160,16 +162,16 @@ def parse_json_val(val, locals=None):
     '''
     # print('--', val, type(val))
     if   isinstance(val, dict):
-        return parse_json(val)
+        return parse_json(val,  locals)
     elif isinstance(val, str):
         if   val.startswith(('<class ', '<function ')):
             return find_object(val, locals)
         elif re.fullmatch(r'^[+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?$',val) or val.lower() in ['true','false'] or val.startswith('lambda'):
-            return eval(val)
+            return eval(val, globals(), locals)
         else :
             return val
     elif hasattr(val,'__iter__'):
-        return [parse_json_val(val_i) for val_i in val]
+        return [parse_json_val(val_i, locals) for val_i in val]
     else:
         raise TypeError(f'Unknown type {type(val)}.')
         
@@ -207,7 +209,12 @@ def load_config(fname, locals : dict[str, object]=None) -> dict:
     :rtype config: dict[str, object]
     '''
     config = load_dict(fname)
-    return parse_json(config, locals)
+    
+    local_dict = __cls_dict
+    if isinstance(locals,dict):
+        local_dict.update(**locals)
+        
+    return parse_json(config, local_dict)
 
 def weak_instantiate_all(config : dict[str,object] | Iterable | object) -> dict[str,object] | Iterable | object:
     # print('weak_instantiate_all --', type(config))

@@ -128,7 +128,7 @@ def evaluate(
                 callback(**loc_kwargs)
                 
             data    = to(data, device)
-            # target  = to(target, device)
+            target  = to(target, device)
 
             prediction = to(model(data), 'cpu')
             
@@ -228,11 +228,12 @@ def evaluate(
         os.makedirs(os.path.dirname(rslt_path), exist_ok=True)
         # print(target.shape, prediction.shape)
         
-        # prediction = prediction.cpu().flatten(1)
-        # target = target.cpu().flatten(1)
         prediction = apply_to_tensor(to(prediction, device='cpu', dtype=torch.float32), 'flatten', 1)
-        target     = apply_to_tensor(to(target    , device='cpu', dtype=torch.float32), 'flatten', 1)
-        
+        try:
+            target = apply_to_tensor(to(target    , device='cpu', dtype=torch.float32), 'flatten', 1)
+        except:
+            target = apply_to_tensor(to(target    , device='cpu', dtype=torch.float32), 'unsqueeze', -1)
+            
         if isnested(prediction):
             prediction = nested2dict(prediction)
             target     = nested2dict(target)

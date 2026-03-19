@@ -57,11 +57,11 @@ if __name__ == '__main__':
     import torch
     from torch.utils.data import DataLoader
     
-    from kan_utils.utils import load_model, load_dict, save_dict, set_seed
+    from kan_utils.utils import load_model, load_dict, save_dict, set_seed, apply_to_tensor
     from kan_utils.config import *
     from kan_utils.training import evaluate
     
-    from prepare_dataset import get_dataset_paths
+    from prepare_dataset import get_dataset_paths, normalize_data
     from custom_dataset import DistributedH5Dataset
     # import custom_callbacks
 
@@ -71,7 +71,7 @@ if __name__ == '__main__':
     )
 
     # Check configuration file validity
-    train_config = load_config(args.train_config, locals=get_locals(extract_statistics))
+    train_config = load_config(args.train_config, locals=get_locals())
     model_config = load_config(args.model_config)
     set_seed(train_config['seed'])
 
@@ -81,6 +81,10 @@ if __name__ == '__main__':
     # Load model state dict
     fname = os.path.join(args.test_dir, 'models', args.epoch)
     model = load_model(model, fname)
+
+    # Instantiate callbacks
+    callbacks = weak_instantiate_all(train_config['callbacks'])
+    callbacks_arguments = weak_instantiate_all(train_config['callbacks_arguments'])
 
     # Instantiate evaluation criteria
     eval_criteria = {
@@ -103,12 +107,12 @@ if __name__ == '__main__':
         buffer_size             = 32*train_config['batch_size'],
         input_cols              = model_config['input'],
         output_cols             = model_config['output'],
-        key_col                 = 'event_no',
+        key_col                 = None,
         task                    = train_config['task'],
         remove_mass_pt_window   = model_config['remove_mass_pt_window'],
         return_weights          = train_config['sample_weight'],
         return_key              = True,
-        preprocess_data         = None,
+        preprocess_data         = lambda data, features = model_config['input']: normalize_data(data, features),
         preprocess_targ         = None,
     )
     test_loader = DataLoader(
@@ -123,14 +127,19 @@ if __name__ == '__main__':
 
     test_metrics = evaluate(
         model,
-        eval_dataloader   = test_loader,
-        criteria          = eval_criteria,
-        keep_copy         = True,
-        checkpoint_path   = fname.replace('models','rslt'),
-        epoch             = args.epoch,
-        sample_weight     = train_config['sample_weight'],
-        show_pbar         = not args.no_pbar,
-        device            = device,
+        eval_dataloader     = test_loader,
+        criteria            = eval_criteria,
+        keep_copy           = True,
+        checkpoint_path     = fname.replace('models','rslt'),
+        epoch               = args.epoch,
+        sample_weight       = train_config['sample_weight'],
+        show_pbar           = not args.no_pbar,
+        device              = device,
+        callbacks           = callbacks,
+        callbacks_arguments = {
+            'epoch' : args.epoch,
+            **callbacks_arguments,
+        },
     )
 
     hist_path = os.path.join(args.test_dir,'history')
@@ -149,8 +158,9 @@ if __name__ == '__main__':
     pr_df = test_df[[_ for _ in test_df.columns if 'pred' in _]]
 
     if len(gt_df.columns) == 1 : # OR train_config['task'] == 'multiclass'
+        gt_df.columns = ['Label']
+        gt_df = gt_df['Label'].astype(int)
         if len(pr_df.columns) == 1 and len(model_config['output']) == 2:
-            gt_df.columns = [f'Label_Is_{model_config['output'][1]}']
             if  model_config['outputs_logits'] :
                 pr_df = pd.DataFrame(
                     data = torch.sigmoid(torch.tensor(pr_df.values),-1).numpy(),
@@ -161,10 +171,6 @@ if __name__ == '__main__':
                 pr_df.columns = [f'Label_Is_{model_config['output'][1]}']
             
         elif len(pr_df.columns) > 1 :
-            gt_df.columns = ['Label']
-            gt_df = gt_df['Label'].map({
-                key : val for key, val in enumerate(model_config['output'])
-            })
             if  model_config['outputs_logits'] :
                 pr_df = pd.DataFrame(
                     data = torch.softmax(torch.tensor(pr_df.values),-1).numpy(),
@@ -174,7 +180,6 @@ if __name__ == '__main__':
             else :
                 pr_df.columns = [f'Label_Is_{_}' for _ in model_config['output']]
         else :
-            gt_df.columns = model_config['output']
             pr_df.columns = model_config['output']
     else :
         gt_df.columns = model_config['output']

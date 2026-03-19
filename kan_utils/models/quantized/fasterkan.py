@@ -282,167 +282,6 @@ class RSFAuto(nn.Module):
         diff = (x[..., None] - self.grid).mul(self.inv_denominator) 
         return self.rbf(diff)
 
-
-class RSFAutoV2(nn.Module):
-    """
-    Radial basis function layer with per‑input learnable parameters.
-
-    :param input_dim: Number of input features
-    :type input_dim: int
-    :param train_grid: Whether to update grid points during training
-    :type train_grid: bool
-    :param train_inv_denominator: Whether to update inv_denominator during training
-    :type train_inv_denominator: bool
-    :param grid_min: Minimum value for grid points (same for all inputs)
-    :type grid_min: float
-    :param grid_max: Maximum value for grid points (same for all inputs)
-    :type grid_max: float
-    :param num_grids: Number of grid points per input
-    :type num_grids: int
-    :param inv_denominator: Initial value for the inverse denominator (same for all inputs)
-    :type inv_denominator: float
-    :param mode: Type of radial basis function
-    :type mode: Literal['RSWAFF','tanh','tanh2','gaussian','sigmoid','square','triangle','sample']
-    """
-    def __init__(
-        self,
-        input_dim: int,
-        train_grid: bool,
-        train_inv_denominator: bool,
-        grid_min: float,
-        grid_max: float,
-        num_grids: int,
-        inv_denominator: float,
-        mode: Literal['RSWAFF','tanh','tanh2','gaussian','sigmoid','square','triangle','sample'] = 'RSWAFF'
-    ):
-        super(RSFAutoV2, self).__init__()
-        self.input_dim = input_dim
-        self.grid_min = grid_min
-        self.grid_max = grid_max
-        self.num_grids = num_grids
-        self.scale = inv_denominator
-
-        # Create grid: one set of num_grids points per input dimension
-        # Initialize by repeating the same linspace for each input
-        base_grid = torch.linspace(grid_min, grid_max, num_grids).float()  # shape: (num_grids,)
-        grid = base_grid.unsqueeze(0).expand(input_dim, -1).contiguous()   # shape: (input_dim, num_grids)
-        self.grid = nn.Parameter(grid, requires_grad=train_grid)
-
-        # Inverse denominator: one scalar per input dimension
-        inv_den = torch.full((input_dim,), inv_denominator, dtype=torch.float32)  # shape: (input_dim,)
-        self.inv_denominator = nn.Parameter(inv_den, requires_grad=train_inv_denominator)
-
-        # Radial basis function (applied elementwise)
-        self.rbf = RadialBasisFunction(mode)
-
-    def extra_repr(self) -> str:
-        return (f"input_dim={self.input_dim}, num_grids={self.num_grids}, "
-                f"grid_min={self.grid_min}, grid_max={self.grid_max}, "
-                f"inv_denominator={self.scale}")
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        :param x: Input tensor of shape [batch_size, input_dim]
-        :return: Transformed tensor of shape [batch_size, input_dim, num_grids]
-        """
-        # x: (batch, input_dim)
-        # grid: (input_dim, num_grids) -> unsqueeze(0) to (1, input_dim, num_grids)
-        # inv_denominator: (input_dim,) -> unsqueeze(0).unsqueeze(-1) to (1, input_dim, 1)
-        diff = (x.unsqueeze(-1) - self.grid.unsqueeze(0)) * self.inv_denominator.unsqueeze(0).unsqueeze(-1)
-        return self.rbf(diff)
-
-
-class FasterKANLayerV2(nn.Module):
-    """
-    A single layer in the FasterKAN architecture using RSFAutoV2.
-    
-    Similar to FasterKANLayer but uses RSFAutoV2 which has per-input-dimension 
-    learnable parameters (grid and inv_denominator) instead of shared ones.
-    
-    The layer applies the following sequence:
-    1. Transform inputs using Radial Spline Functions with per-input parameters (RSFAutoV2)
-    2. Apply dropout
-    3. Apply linear transformation to the outputs
-
-    :param train_grid: Whether to update grid points during training
-    :type train_grid: bool
-    :param train_inv_denominator: Whether to update inv_denominator during training
-    :type train_inv_denominator: bool
-    :param input_dim: Dimensionality of input features
-    :type input_dim: int
-    :param output_dim: Dimensionality of output features
-    :type output_dim: int
-    :param grid_min: Minimum value for grid points (same for all inputs)
-    :type grid_min: float
-    :param grid_max: Maximum value for grid points (same for all inputs)
-    :type grid_max: float
-    :param num_grids: Number of grid points per input
-    :type num_grids: int
-    :param inv_denominator: Initial value for inverse denominator (same for all inputs)
-    :type inv_denominator: float
-    :param mode: Type of radial basis function to use
-    :type mode: Literal['RSWAFF','tanh','tanh2','gaussian', 'sigmoid','square','triangle','sample']
-    :param dropout_rate: Dropout rate to use on RBF output; if None, defaults to 0.5
-    :type dropout_rate: Optional[float]
-    :param dropout_linear: Dropout rate to use on linear layer output; if None, no dropout
-    :type dropout_linear: Optional[float]
-    """
-    def __init__(
-        self,
-        input_dim: int,
-        output_dim: int,
-        grid_min: float,
-        grid_max: float,
-        num_grids: int,
-        inv_denominator: float,
-        mode: Literal['RSWAFF','tanh','tanh2','gaussian', 'sigmoid','square','triangle','sample'] = 'RSWAFF',
-        dropout_rate: Optional[float] = None,
-        dropout_linear: Optional[float] = None,
-        train_grid: bool = True,        
-        train_inv_denominator: bool = True,
-        normalize_rbf: bool = False,
-    ) -> None:
-        super(FasterKANLayerV2, self).__init__()
-        
-        self.input_dim = input_dim
-        self.output_dim = output_dim
-        self.normalize_rbf = normalize_rbf
-
-        self.rbf = RSFAutoV2(
-            input_dim=input_dim,
-            train_grid=train_grid, 
-            train_inv_denominator=train_inv_denominator,
-            grid_min=grid_min, 
-            grid_max=grid_max, 
-            num_grids=num_grids, 
-            inv_denominator=inv_denominator, 
-            mode=mode
-        )
-        # Add normalization to stabilize RBF outputs before linear layer
-        if normalize_rbf:
-            self.rbf_norm = nn.LayerNorm(input_dim * num_grids)
-        self.linear = nn.Linear(input_dim * num_grids, output_dim, bias=USE_BIAS_ON_LINEAR) 
-        self.drop = nn.Dropout(0 if dropout_rate is None else dropout_rate)
-        self.drop_linear = nn.Dropout(0 if dropout_linear is None else dropout_linear)
-
-    def forward(self, x):
-        """
-        :param x: Input tensor [batch_size, input_dim]
-        :type x: torch.Tensor
-        :return: Output tensor [batch_size, output_dim]
-        :rtype: torch.Tensor
-        """
-        batch_size = x.size(0)
-        x = x.view(batch_size, -1)
-        spline_basis = self.rbf(x).view(batch_size, -1)
-        if self.normalize_rbf:
-            spline_basis = self.rbf_norm(spline_basis)  # Normalize before dropout and linear
-        spline_basis = self.drop(spline_basis)
-        output = self.linear(spline_basis)
-        output = self.drop_linear(output)
-        return output
-
-    
 class DynamicRSFAuto(nn.Module):
     """
     :param input_dim: Dimensionality of input features
@@ -462,7 +301,6 @@ class DynamicRSFAuto(nn.Module):
         dropout_rate: Optional[float] = None,
     ):
         super(DynamicRSFAuto,self).__init__()
-        self.mode = mode
         self.params_linear = FasterKANLayer(
             input_dim               = input_dim,
             output_dim              = num_grids + 1,
@@ -470,12 +308,13 @@ class DynamicRSFAuto(nn.Module):
             grid_min                = 0,
             grid_max                = 0,
             inv_denominator         = 1.0,
-            train_grid              = True,
-            train_inv_denominator   = True,
+            train_grid              = False,
+            train_inv_denominator   = False,
             mode                    = mode,
-            dropout_rate            = dropout_rate,
+            dropout_rate            = 0.,
         )
         self.rbf = RadialBasisFunction(self.mode)
+        self.drop = nn.Dropout(0 if dropout_rate is None else dropout_rate) 
 
     def extra_repr(self) -> str:
         """
@@ -492,7 +331,7 @@ class DynamicRSFAuto(nn.Module):
         """
         params = self.params_linear(x).unsqueeze(-2)
         grid, scale = params.split([self.params_linear.output_dim - 1, 1], dim=-1)
-        diff = (x[..., None] - grid).mul(scale) 
+        diff = (x[..., None] - self.drop(grid)).mul(scale) 
         return self.rbf(diff)
 
 class FasterKANLayer(nn.Module):
@@ -522,14 +361,11 @@ class FasterKANLayer(nn.Module):
     :type inv_denominator: float
     :param mode: Type of radial basis function to use
     :type mode: Literal['RSWAFF','tanh','tanh2','gaussian', 'sigmoid','square','triangle','sample']
-    :param dropout_rate: Dropout rate to use on RBF output; if None, defaults to 0.5
+    :param dropout_rate: Dropout rate to use; if None, defaults to 0.5
     :type dropout_rate: Optional[float]
-    :param dropout_linear: Dropout rate to use on linear layer output; if None, no dropout
-    :type dropout_linear: Optional[float]
     Attributes:
         rbf (RSF): Radial Spline Function module
-        drop (nn.Dropout): Dropout layer with adaptive rate for RBF output
-        drop_linear (nn.Dropout): Dropout layer for linear output
+        drop (nn.Dropout): Dropout layer with adaptive rate
         linear (nn.Linear): Linear transformation without bias
     """
     def __init__(
@@ -542,24 +378,17 @@ class FasterKANLayer(nn.Module):
         inv_denominator: float,
         mode : Literal['RSWAFF','tanh','tanh2','gaussian', 'sigmoid','square','triangle','sample'] = 'RSWAFF',
         dropout_rate: Optional[float] = None,
-        dropout_linear: Optional[float] = None,
         train_grid: bool = True,        
         train_inv_denominator: bool = True,
-        normalize_rbf: bool = False,
     ) -> None:
         super(FasterKANLayer,self).__init__()
         
         self.input_dim = input_dim
         self.output_dim = output_dim
-        self.normalize_rbf = normalize_rbf
 
         self.rbf = RSFAuto(train_grid, train_inv_denominator,grid_min, grid_max, num_grids, inv_denominator, mode=mode)
-        # Add normalization to stabilize RBF outputs before linear layer
-        if normalize_rbf:
-            self.rbf_norm = nn.LayerNorm(input_dim * num_grids)
         self.linear = nn.Linear(input_dim * num_grids, output_dim, bias=USE_BIAS_ON_LINEAR) 
-        self.drop = nn.Dropout(0 if dropout_rate is None else dropout_rate)
-        self.drop_linear = nn.Dropout(0 if dropout_linear is None else dropout_linear) 
+        self.drop = nn.Dropout(0 if dropout_rate is None else dropout_rate) 
 
     def forward(self, x):
         """
@@ -571,11 +400,8 @@ class FasterKANLayer(nn.Module):
         batch_size = x.size(0)
         x = x.view(batch_size, -1)
         spline_basis = self.rbf(x).view(batch_size, -1)
-        if self.normalize_rbf:
-            spline_basis = self.rbf_norm(spline_basis)  # Normalize before dropout and linear
         spline_basis = self.drop(spline_basis)
         output = self.linear(spline_basis)
-        output = self.drop_linear(output)
         return output
 
 class DynamicFasterKANLayer(nn.Module):
@@ -595,14 +421,11 @@ class DynamicFasterKANLayer(nn.Module):
     :type num_grids: int
     :param mode: Type of radial basis function to use
     :type mode: Literal['RSWAFF','tanh','tanh2','gaussian', 'sigmoid','square','triangle','sample']
-    :param dropout_rate: Dropout rate to use on RBF output; if None, defaults to 0.5
+    :param dropout_rate: Dropout rate to use; if None, defaults to 0.5
     :type dropout_rate: Optional[float]
-    :param dropout_linear: Dropout rate to use on linear layer output; if None, no dropout
-    :type dropout_linear: Optional[float]
     Attributes:
         rbf (RSF): Radial Spline Function module
         drop (nn.Dropout): Dropout layer with adaptive rate
-        drop_linear (nn.Dropout): Dropout layer for linear output
         linear (nn.Linear): Linear transformation without bias
     """
     def __init__(
@@ -612,7 +435,6 @@ class DynamicFasterKANLayer(nn.Module):
         num_grids: int,
         mode : Literal['RSWAFF','tanh','tanh2','gaussian', 'sigmoid','square','triangle','sample'] = 'RSWAFF',
         dropout_rate: Optional[float] = None,
-        dropout_linear: Optional[float] = None,
         **kwargs
     ) -> None:
         super(DynamicFasterKANLayer,self).__init__()
@@ -622,8 +444,7 @@ class DynamicFasterKANLayer(nn.Module):
 
         self.rbf = DynamicRSFAuto(input_dim, num_grids, mode=mode, dropout_rate=dropout_rate)
         self.linear = nn.Linear(input_dim * num_grids, output_dim, bias=USE_BIAS_ON_LINEAR) 
-        self.drop = nn.Dropout(0 if dropout_rate is None else dropout_rate)
-        self.drop_linear = nn.Dropout(0 if dropout_linear is None else dropout_linear)
+        self.drop = nn.Dropout(0 if dropout_rate is None else dropout_rate) 
 
     def forward(self, x):
         """
@@ -637,7 +458,6 @@ class DynamicFasterKANLayer(nn.Module):
         spline_basis = self.rbf(x).view(batch_size, -1)
         spline_basis = self.drop(spline_basis)
         output = self.linear(spline_basis)
-        output = self.drop_linear(output)
         return output
 
 # @torch.compile
@@ -664,14 +484,10 @@ class FasterKAN(nn.Module):
     :type residual: list[bool]
     :param dynamic: Whether to use dynamic grid and inv_denominator parameters
     :type dynamic: bool
-    :param use_v2: Whether to use V2 variant with per-input-dimension learnable parameters
-    :type use_v2: bool
     :param normalize: If `True`, add a normalization layer before every `FasterKAN` layer. Default is `True`
     :type normalize: bool
-    :param dropout_rate: If specified, apply `torch.nn.Dropout` to the RBF-activated data with probability `dropout_rate`. Default is `None`.
+    :param dropout_rate: If specified, apply `torch.nn.Dropout` to the RBF-activated data with probability `dropout_rate`. Dafault is `None`.
     :type dropout_rate: float, Optional
-    :param dropout_linear: If specified, apply `torch.nn.Dropout` to the linear layer output with probability `dropout_linear`. Default is `None`.
-    :type dropout_linear: float, Optional
     
     Attributes:
         train_grid (bool): Whether grid points are being updated during training
@@ -679,7 +495,6 @@ class FasterKAN(nn.Module):
         layers (nn.ModuleList): List of FasterKANLayer modules
         is_eval (bool): Whether the model is in evaluation mode
         dropout_rate (float): The current dropout rate.
-        dropout_linear (float): The current linear dropout rate.
     
     Example:
         ```python
@@ -696,19 +511,14 @@ class FasterKAN(nn.Module):
         mode : Callable | Literal['RSWAFF','tanh','tanh2','gaussian', 'sigmoid','square','triangle','sample'] = 'RSWAFF',
         residual : list[bool] = False,
         dynamic : bool = False,
-        use_v2 : bool = False,
         normalize : bool = True,
-        normalize_rbf : bool = False,
         dropout_rate: Optional[float] = None,
-        dropout_linear: Optional[float] = None,
     ):
         super(FasterKAN, self).__init__()
 
         self.train_grid = True
         self.train_inv_denominator = True
         self.dropout_rate = dropout_rate
-        self.dropout_linear = dropout_linear
-        self.normalize_rbf = normalize_rbf
         
         num_grids       = expand_value(num_grids,       len(hidden_layers)-1)
         grid_min        = expand_value(grid_min,        len(hidden_layers)-1)
@@ -718,8 +528,6 @@ class FasterKAN(nn.Module):
         
         if dynamic :
             LayerClass = DynamicFasterKANLayer
-        elif use_v2 :
-            LayerClass = FasterKANLayerV2
         else :
             LayerClass = FasterKANLayer
         
@@ -746,8 +554,6 @@ class FasterKAN(nn.Module):
                 inv_denominator       = inv_denominator_i,
                 mode                  = mode,
                 dropout_rate          = self.dropout_rate,
-                dropout_linear        = self.dropout_linear,
-                normalize_rbf         = self.normalize_rbf,
             ) for _iter, (
                 num_grids_i, 
                 in_dim, 

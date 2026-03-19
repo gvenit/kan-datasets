@@ -12,7 +12,7 @@ class DistributedH5Dataset (IterableDataset):
         input_cols  : list[str], 
         output_cols : list[str], 
         key_col     : str       = None,
-        task        : Literal['binary','multiclass','multilabel'] = 'multiclass',
+        task        : Literal['binary','as_binary','multiclass','multilabel'] = 'multiclass',
         remove_mass_pt_window   : dict[tuple[float,float]] = False, 
         return_weights : str    = False,
         return_key              = False,
@@ -26,6 +26,8 @@ class DistributedH5Dataset (IterableDataset):
         self.input_cols      = input_cols
         if self.task == 'binary' and len(output_cols) not in (1, 2):
             raise ValueError(f'Binary task requires one output column; got {len(output_cols)}')
+        elif self.task == 'as_binary' and len(output_cols) != 2:
+            raise ValueError(f'Binary task requires one output column; got {len(output_cols)}')
         self.output_cols     = output_cols
         self.key_col         = key_col
         self.return_weights  = return_weights
@@ -37,7 +39,7 @@ class DistributedH5Dataset (IterableDataset):
         self.total_len = None
         
     def set_task(self, task):
-        if task not in ('binary','multiclass','multilabel'):
+        if task not in ('binary','as_binary','multiclass','multilabel'):
             raise NotImplementedError(f'Task type "{task}" is not implemented.')
         self.task = task
         
@@ -57,6 +59,7 @@ class DistributedH5Dataset (IterableDataset):
         if self.curr_len == 0 or self.idx_buffer >= self.curr_len :
             if  self.idx_file  == self.curr_len == 0:
                 self.idx_file   = 0
+                self.idx_total  = 0
             else :
                 self.idx_file  += 1
             self.idx_buffer = 0
@@ -107,14 +110,17 @@ class DistributedH5Dataset (IterableDataset):
                 self.wght_buffer = torch.tensor(
                     getattr(h5file.root, self._return_weights)[self.idx_buffer:self.idx_buffer+self.buffer_size]
                 ).float()
-            if self._return_key:
+            if self._return_key and self.key_col is not None:
                 self.key_buffer = getattr(h5file.root, self.key_col)[self.idx_buffer:self.idx_buffer+self.buffer_size]
 
             data_parced = len(self.data_buffer)
             
-            if self.task == 'multiclass':
+            if self.task in ('as_binary','multiclass'):
                 cond = self.targ_buffer.sum(1) == 1
                 self.targ_buffer = self.targ_buffer.argmax(1)
+                
+                if self.task == 'as_binary':
+                    self.targ_buffer = self.targ_buffer.float()
             else :
                 cond = torch.ones_like(self.targ_buffer[:,0]).to(torch.bool)
 
@@ -143,7 +149,7 @@ class DistributedH5Dataset (IterableDataset):
         self.targ_buffer = self.targ_buffer[cond]
         if self._return_weights:
             self.wght_buffer = self.wght_buffer[cond]
-        if self._return_key:
+        if self._return_key and self.key_col is not None:
             self.key_buffer = self.key_buffer[cond]
             
         self.idx_buffer += data_parced
@@ -156,14 +162,20 @@ class DistributedH5Dataset (IterableDataset):
         
         idx = self.idx
         self.idx += 1
+        self.idx_total += 1
         
         extra_args = ()
-        if self._return_key:
+        if self._return_weights:
             extra_args += self.wght_buffer[idx],
             
-        if self._return_key:
+        if self._return_key and self.key_col is not None:
             extra_args += self.key_buffer[idx],
-        
+        elif self._return_key and self.key_col is None:
+            if self.worker_info is None:
+                extra_args += self.idx_total,
+            else :
+                extra_args += f'{self.worker_info.id}-{self.idx_total}',
+                
         return self.data_buffer[idx], self.targ_buffer[idx], *extra_args
         
     def __iter__(self):
@@ -173,15 +185,15 @@ class DistributedH5Dataset (IterableDataset):
         self.idx_file = 0
         self.curr_len = 0
         
-        worker_info = get_worker_info()
-        if worker_info is None:
+        self.worker_info = get_worker_info()
+        if self.worker_info is None:
             # Assign all files to workers
             self.h5workerfiles = self.h5files
             return self
         else:
             self.h5workerfiles = [
                 _ for _iter, _ in enumerate(self.h5files)
-                    if _iter % worker_info.num_workers == worker_info.id
+                    if _iter % self.worker_info.num_workers == self.worker_info.id
             ]
             return self
         

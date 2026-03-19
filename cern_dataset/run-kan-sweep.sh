@@ -4,22 +4,23 @@
 # Parameter Sweep Configuration
 # -- Define lists of parameters to sweep over
 ########################################
-TEST_VERSIONS=("")  # TestLoss  -linearly_normalized
+TEST_VERSIONS=("normalized")  # TestLoss  -linearly_normalized
 SEEDS=(42)
 
-WITH_LOGITS=("1" "0")
-LAYERS_LIST=("16 16")
+WITH_LOGITS=("1")
+LAYERS_LIST=("" "8" "16")
 NUM_GRIDS_LIST=("4 6")
 GRID_MIN_LIST=("-3 -1.7")
 GRID_MAX_LIST=("2 1.25")
 SCALE_LIST=("8 0.5")
-MODES=('PReLU')
-RESIDUALS=(0 1)
+MODES=('custom')
+RESIDUALS=(0)
 DYNAMICS=(0)
-DROPOUTS=(0.0)
+NO_NORMALIZES=(1)
+DROPOUTS=(0.15)
 
 EPOCHS_LIST=(1000)
-PATIENCE_LIST=(15)
+PATIENCE_LIST=(50)
 BATCH_SIZES=(16384)
 LEARNING_RATES=(5e-2)
 OPTIMIZERS=("AdamW")
@@ -183,7 +184,7 @@ print_exec mkdir -p "$RESULTS_DIR"
 
 # Calculate total number of experiments
 total_combinations=1
-for param_list in "${WITH_LOGITS[@]}" "${LAYERS_LIST[@]}" "${NUM_GRIDS_LIST[@]}" "${GRID_MIN_LIST[@]}" "${GRID_MAX_LIST[@]}" "${SCALE_LIST[@]}" "${MODES[@]}" "${RESIDUALS[@]}" "${DYNAMICS[@]}" "${DROPOUTS[@]}" "${EPOCHS_LIST[@]}" "${PATIENCE_LIST[@]}" "${BATCH_SIZES[@]}" "${LEARNING_RATES[@]}" "${OPTIMIZERS[@]}" "${WEIGHT_DECAYS[@]}" "${MOMENTUMS[@]}" "${TEST_VERSIONS[@]}" "${SEEDS[@]}"; do
+for param_list in "${WITH_LOGITS[@]}" "${LAYERS_LIST[@]}" "${NUM_GRIDS_LIST[@]}" "${GRID_MIN_LIST[@]}" "${GRID_MAX_LIST[@]}" "${SCALE_LIST[@]}" "${MODES[@]}" "${RESIDUALS[@]}" "${DYNAMICS[@]}" "${NO_NORMALIZES[@]}" "${DROPOUTS[@]}" "${EPOCHS_LIST[@]}" "${PATIENCE_LIST[@]}" "${BATCH_SIZES[@]}" "${LEARNING_RATES[@]}" "${OPTIMIZERS[@]}" "${WEIGHT_DECAYS[@]}" "${MOMENTUMS[@]}" "${TEST_VERSIONS[@]}" "${SEEDS[@]}"; do
     break
 done
 
@@ -200,18 +201,20 @@ for TEST_VERSION in "${TEST_VERSIONS[@]}"; do
                             for MODE in "${MODES[@]}"; do
                                 for RESIDUAL in "${RESIDUALS[@]}"; do
                                     for DYNAMIC in "${DYNAMICS[@]}"; do
-                                        for DROPOUT in "${DROPOUTS[@]}"; do
-                                            for EPOCHS in "${EPOCHS_LIST[@]}"; do
-                                                for PATIENCE in "${PATIENCE_LIST[@]}"; do
-                                                    for BATCH in "${BATCH_SIZES[@]}"; do
-                                                        for LR in "${LEARNING_RATES[@]}"; do
-                                                            for OPTIMIZER in "${OPTIMIZERS[@]}"; do
-                                                                for WEIGHT_DECAY in "${WEIGHT_DECAYS[@]}"; do
-                                                                    for MOMENTUM in "${MOMENTUMS[@]}"; do
-                                                                        ((exp_count++))
-                                                                        if [ $max_experiments -gt 0 ] && [ $exp_count -gt $max_experiments ]; then
-                                                                            break 18  # Break out of all loops
-                                                                        fi
+                                        for NO_NORMALIZE in "${NO_NORMALIZES[@]}"; do
+                                            for DROPOUT in "${DROPOUTS[@]}"; do
+                                                for EPOCHS in "${EPOCHS_LIST[@]}"; do
+                                                    for PATIENCE in "${PATIENCE_LIST[@]}"; do
+                                                        for BATCH in "${BATCH_SIZES[@]}"; do
+                                                            for LR in "${LEARNING_RATES[@]}"; do
+                                                                for OPTIMIZER in "${OPTIMIZERS[@]}"; do
+                                                                    for WEIGHT_DECAY in "${WEIGHT_DECAYS[@]}"; do
+                                                                        for MOMENTUM in "${MOMENTUMS[@]}"; do
+                                                                            ((exp_count++))
+                                                                            if [ $max_experiments -gt 0 ] && [ $exp_count -gt $max_experiments ]; then
+                                                                                break 18  # Break out of all loops
+                                                                            fi
+                                                                        done
                                                                     done
                                                                 done
                                                             done
@@ -308,9 +311,12 @@ run_experiment() {
     if [ $use_no_pbar -eq 1 ]; then
         pbar_flag="--no-pbar"
     fi
-    
+    if [ -n "$test_version" ]; then
+        set_test_version="--test-version $test_version"
+    fi 
+
     # Train model
-    local train_cmd="$THIS_DIR/train_model.py --hash $exp_hash $pbar_flag"
+    local train_cmd="$THIS_DIR/train_model.py --hash $exp_hash $set_test_version $pbar_flag"
     if [ $dryrun -eq 0 ]; then
         echo "[$(date '+%Y-%m-%d %H:%M:%S')] Starting training..." >> "$terminal_output"
         $train_cmd >> "$terminal_output" 2>&1
@@ -322,13 +328,13 @@ run_experiment() {
     
     if [ $train_status -ne 0 ] && [ $dryrun -eq 0 ]; then
         echo "Training failed for experiment $exp_num"
-        log_experiment $exp_num $total_exp $exp_hash "TRAIN_FAILED"
+        log_experiment $exp_num $total_exp $exp_hash $test_version "TRAIN_FAILED"
         return 1
     fi
     
     # Test model (only if training succeeded)
     if [ $experiment_failed -eq 0 ]; then
-        local test_cmd="$THIS_DIR/test_model.py --hash $exp_hash --epoch best $pbar_flag"
+        local test_cmd="$THIS_DIR/test_model.py --hash $exp_hash $set_test_version --epoch best $pbar_flag"
         if [ $dryrun -eq 0 ]; then
             echo "[$(date '+%Y-%m-%d %H:%M:%S')] Starting testing..." >> "$terminal_output"
             $test_cmd >> "$terminal_output" 2>&1
@@ -340,14 +346,14 @@ run_experiment() {
         
         if [ $test_status -ne 0 ] && [ $dryrun -eq 0 ]; then
             echo "Testing failed for experiment $exp_num"
-            log_experiment $exp_num $total_exp $exp_hash "TEST_FAILED"
+            log_experiment $exp_num $total_exp $exp_hash $test_version "TEST_FAILED"
             return 1
         fi
     fi
     
     # Extract results (only if previous steps succeeded)
     if [ $experiment_failed -eq 0 ]; then
-        local extract_cmd="$THIS_DIR/extract_rslt_statistics.py --hash $exp_hash --epoch best"
+        local extract_cmd="$THIS_DIR/extract_rslt_statistics.py --hash $exp_hash  $set_test_version --epoch best"
         if [ $dryrun -eq 0 ]; then
             echo "[$(date '+%Y-%m-%d %H:%M:%S')] Extracting results..." >> "$terminal_output"
             $extract_cmd >> "$terminal_output" 2>&1
@@ -359,10 +365,10 @@ run_experiment() {
         
         if [ $extract_status -ne 0 ] && [ $dryrun -eq 0 ]; then
             echo "Results extraction failed for experiment $exp_num"
-            log_experiment $exp_num $total_exp $exp_hash "EXTRACT_FAILED"
+            log_experiment $exp_num $total_exp $exp_hash $test_version "EXTRACT_FAILED"
             return 1
         else
-            log_experiment $exp_num $total_exp $exp_hash "COMPLETED"
+            log_experiment $exp_num $total_exp $exp_hash $test_version "COMPLETED"
         fi
     fi
     
@@ -388,135 +394,143 @@ for TEST_VERSION in "${TEST_VERSIONS[@]}"; do
                             for MODE in "${MODES[@]}"; do
                                 for RESIDUAL in "${RESIDUALS[@]}"; do
                                     for DYNAMIC in "${DYNAMICS[@]}"; do
-                                        for DROPOUT in "${DROPOUTS[@]}"; do
-                                            for EPOCHS in "${EPOCHS_LIST[@]}"; do
-                                                for PATIENCE in "${PATIENCE_LIST[@]}"; do
-                                                    for BATCH in "${BATCH_SIZES[@]}"; do
-                                                        for LR in "${LEARNING_RATES[@]}"; do
-                                                            for OPTIMIZER in "${OPTIMIZERS[@]}"; do
-                                                                for WEIGHT_DECAY in "${WEIGHT_DECAYS[@]}"; do
-                                                                    for MOMENTUM in "${MOMENTUMS[@]}"; do
-                                                                        ((experiment_num++))
-                                                                        
-                                                                        if [ $max_experiments -gt 0 ] && [ $experiment_num -gt $max_experiments ]; then
-                                                                            echo "Reached maximum experiments limit ($max_experiments)"
-                                                                            break 18  # Break out of all loops
-                                                                        fi
-
-                                                                        # Build configuration arguments
-                                                                        CONFIGS=""
-                                                                        CONFIGS="$CONFIGS --layers $LAYERS"
-                                                                        CONFIGS="$CONFIGS --num-grids $NUM_GRIDS"
-                                                                        CONFIGS="$CONFIGS --grid-min $GRID_MIN"
-                                                                        CONFIGS="$CONFIGS --grid-max $GRID_MAX"
-                                                                        CONFIGS="$CONFIGS --scale $SCALE"
-                                                                        CONFIGS="$CONFIGS --mode $MODE"
-                                                                        
-                                                                        if [[ "$RESIDUAL" -gt 0 ]]; then
-                                                                            CONFIGS="$CONFIGS --residual"
-                                                                        fi 
-                                                                        if [[ "$DYNAMIC" -gt 0 ]]; then
-                                                                            CONFIGS="$CONFIGS --dynamic"
-                                                                        fi
-                                                                        CONFIGS="$CONFIGS --dropout $DROPOUT"
-                                                                        
-                                                                        CONFIGS="$CONFIGS --epochs $EPOCHS"
-                                                                        CONFIGS="$CONFIGS --patience $PATIENCE"
-                                                                        CONFIGS="$CONFIGS --batch $BATCH"
-                                                                        CONFIGS="$CONFIGS --lr $LR"
-                                                                        CONFIGS="$CONFIGS --optimizer $OPTIMIZER"
-                                                                        CONFIGS="$CONFIGS --weight-decay $WEIGHT_DECAY"
-                                                                        
-                                                                        if [ -n "$MOMENTUM" ]; then
-                                                                            CONFIGS="$CONFIGS --momentum $MOMENTUM"
-                                                                        fi
-                                                                        CONFIGS="$CONFIGS --seed $SEED"
-                                                                        
-                                                                        if [ -n "$TEST_VERSION" ]; then
-                                                                            CONFIGS="$CONFIGS --test-version $TEST_VERSION"
-                                                                        fi 
-
-                                                                        # Generate configuration hash
-                                                                        if [ $WITH_LOGIT -ge 1 ]; then
-                                                                            create_config_cmd="$THIS_DIR/create_configs_logits.py $CONFIGS --export --hash"
-                                                                        else
-                                                                            create_config_cmd="$THIS_DIR/create_configs.py $CONFIGS --export --hash"
-                                                                        fi
-                                                                        print_verbose [EXEC] $create_config_cmd
-                                                                        exp_hash=$(dry_run $create_config_cmd)
-
-                                                                        if [ $dryrun -ge 1 ]; then
-                                                                            exp_hash="dummy_hash_${experiment_num}"
-                                                                        fi
-
-                                                                        print_verbose "[INFO] Configuration Hash: $exp_hash"
-
-                                                                        # Save hyperparameters to CSV
-                                                                        if [ $dryrun -eq 0 ]; then
-                                                                            # Determine test directory path
-                                                                            if [ -n "$TEST_VERSION" ]; then
-                                                                                test_dir_name="test_${TEST_VERSION}"
-                                                                            else
-                                                                                test_dir_name="test_0"
-                                                                            fi
-                                                                            config_dir="$THIS_DIR/train/${exp_hash}/${test_dir_name}/config"
+                                        for NO_NORMALIZE in "${NO_NORMALIZES[@]}"; do
+                                            for DROPOUT in "${DROPOUTS[@]}"; do
+                                                for EPOCHS in "${EPOCHS_LIST[@]}"; do
+                                                    for PATIENCE in "${PATIENCE_LIST[@]}"; do
+                                                        for BATCH in "${BATCH_SIZES[@]}"; do
+                                                            for LR in "${LEARNING_RATES[@]}"; do
+                                                                for OPTIMIZER in "${OPTIMIZERS[@]}"; do
+                                                                    for WEIGHT_DECAY in "${WEIGHT_DECAYS[@]}"; do
+                                                                        for MOMENTUM in "${MOMENTUMS[@]}"; do
+                                                                            ((experiment_num++))
                                                                             
-                                                                            # Ensure config directory exists (should have been created by create_configs.py)
-                                                                            if [ -d "$config_dir" ]; then
-                                                                                # Create hyperparameters CSV
-                                                                                hyperparams_file="${config_dir}/hyperparameters.csv"
-                                                                                
-                                                                                # Write CSV header and data
-                                                                                echo "parameter,value" > "$hyperparams_file"
-                                                                                echo "with_logits,$WITH_LOGIT" >> "$hyperparams_file"
-                                                                                echo "layers,\"$LAYERS\"" >> "$hyperparams_file"
-                                                                                echo "num_grids,\"$NUM_GRIDS\"" >> "$hyperparams_file"
-                                                                                echo "grid_min,\"$GRID_MIN\"" >> "$hyperparams_file"
-                                                                                echo "grid_max,\"$GRID_MAX\"" >> "$hyperparams_file"
-                                                                                echo "scale,\"$SCALE\"" >> "$hyperparams_file"
-                                                                                echo "mode,$MODE" >> "$hyperparams_file"
-                                                                                echo "residual,$RESIDUAL" >> "$hyperparams_file"
-                                                                                echo "dynamic,$DYNAMIC" >> "$hyperparams_file"
-                                                                                echo "dropout,$DROPOUT" >> "$hyperparams_file"
-                                                                                echo "epochs,$EPOCHS" >> "$hyperparams_file"
-                                                                                echo "patience,$PATIENCE" >> "$hyperparams_file"
-                                                                                echo "batch_size,$BATCH" >> "$hyperparams_file"
-                                                                                echo "learning_rate,$LR" >> "$hyperparams_file"
-                                                                                echo "optimizer,$OPTIMIZER" >> "$hyperparams_file"
-                                                                                echo "weight_decay,$WEIGHT_DECAY" >> "$hyperparams_file"
-                                                                                echo "momentum,$MOMENTUM" >> "$hyperparams_file"
-                                                                                echo "seed,$SEED" >> "$hyperparams_file"
-                                                                                echo "test_version,$TEST_VERSION" >> "$hyperparams_file"
-                                                                                echo "experiment_number,$experiment_num" >> "$hyperparams_file"
-                                                                                echo "config_hash,$exp_hash" >> "$hyperparams_file"
+                                                                            if [ $max_experiments -gt 0 ] && [ $experiment_num -gt $max_experiments ]; then
+                                                                                echo "Reached maximum experiments limit ($max_experiments)"
+                                                                                break 18  # Break out of all loops
+                                                                            fi
+
+                                                                            # Build configuration arguments
+                                                                            CONFIGS=""
+                                                                            if [ $LAYERS ]; then 
+                                                                                CONFIGS="$CONFIGS --layers $LAYERS"
+                                                                            fi
+                                                                            CONFIGS="$CONFIGS --num-grids $NUM_GRIDS"
+                                                                            CONFIGS="$CONFIGS --grid-min $GRID_MIN"
+                                                                            CONFIGS="$CONFIGS --grid-max $GRID_MAX"
+                                                                            CONFIGS="$CONFIGS --scale $SCALE"
+                                                                            CONFIGS="$CONFIGS --mode $MODE"
+                                                                            
+                                                                            if [[ "$RESIDUAL" -gt 0 ]]; then
+                                                                                CONFIGS="$CONFIGS --residual"
+                                                                            fi 
+                                                                            if [[ "$DYNAMIC" -gt 0 ]]; then
+                                                                                CONFIGS="$CONFIGS --dynamic"
+                                                                            fi
+                                                                            if [[ "$NO_NORMALIZE" -gt 0 ]]; then
+                                                                                CONFIGS="$CONFIGS --no-normalize"
+                                                                            fi
+                                                                            CONFIGS="$CONFIGS --dropout $DROPOUT"
+                                                                            
+                                                                            CONFIGS="$CONFIGS --epochs $EPOCHS"
+                                                                            CONFIGS="$CONFIGS --patience $PATIENCE"
+                                                                            CONFIGS="$CONFIGS --batch $BATCH"
+                                                                            CONFIGS="$CONFIGS --lr $LR"
+                                                                            CONFIGS="$CONFIGS --optimizer $OPTIMIZER"
+                                                                            CONFIGS="$CONFIGS --weight-decay $WEIGHT_DECAY"
+                                                                            
+                                                                            if [ -n "$MOMENTUM" ]; then
+                                                                                CONFIGS="$CONFIGS --momentum $MOMENTUM"
+                                                                            fi
+                                                                            CONFIGS="$CONFIGS --seed $SEED"
+                                                                            
+                                                                            if [ -n "$TEST_VERSION" ]; then
+                                                                                CONFIGS="$CONFIGS --test-version $TEST_VERSION"
+                                                                            fi 
+
+                                                                            # Generate configuration hash
+                                                                            if [ $WITH_LOGIT -ge 1 ]; then
+                                                                                create_config_cmd="$THIS_DIR/create_configs_logits.py $CONFIGS --export --hash"
                                                                             else
-                                                                                echo "Warning: Config directory not found at $config_dir, skipping hyperparameters.csv"
+                                                                                create_config_cmd="$THIS_DIR/create_configs.py $CONFIGS --export --hash"
                                                                             fi
-                                                                        fi
+                                                                            print_verbose [EXEC] $create_config_cmd
+                                                                            exp_hash=$(dry_run $create_config_cmd)
 
-                                                                        # Wait for available job slot if running parallel
-                                                                        if [ $MAX_PARALLEL_JOBS -gt 1 ]; then
-                                                                            wait_for_jobs $MAX_PARALLEL_JOBS
-                                                                        fi
-
-                                                                        # Run experiment (in background if parallel)
-                                                                        if [ $MAX_PARALLEL_JOBS -gt 1 ]; then
-                                                                            run_experiment $experiment_num $total_experiments "$exp_hash" "$CONFIGS" $WITH_LOGIT "$TEST_VERSION" $no_pbar &
-                                                                        else
-                                                                            run_experiment $experiment_num $total_experiments "$exp_hash" "$CONFIGS" $WITH_LOGIT "$TEST_VERSION" $no_pbar
-                                                                            if [ $? -ne 0 ]; then
-                                                                                ((failed_experiments++))
+                                                                            if [ $dryrun -ge 1 ]; then
+                                                                                exp_hash="dummy_hash_${experiment_num}"
                                                                             fi
-                                                                        fi
 
-                                                                        # Progress update (for sequential mode)
-                                                                        if [ $MAX_PARALLEL_JOBS -eq 1 ]; then
-                                                                            completed_experiments=$((experiment_num - failed_experiments))
-                                                                            echo ""
-                                                                            echo "Progress: $experiment_num/$total_experiments experiments completed"
-                                                                            echo "Success: $completed_experiments, Failed: $failed_experiments"
-                                                                            echo ""
-                                                                        fi
+                                                                            print_verbose "[INFO] Configuration Hash: $exp_hash"
+
+                                                                            # Save hyperparameters to CSV
+                                                                            if [ $dryrun -eq 0 ]; then
+                                                                                # Determine test directory path
+                                                                                if [ -n "$TEST_VERSION" ]; then
+                                                                                    test_dir_name="test_${TEST_VERSION}"
+                                                                                else
+                                                                                    test_dir_name="test_0"
+                                                                                fi
+                                                                                config_dir="$THIS_DIR/train/${exp_hash}/${test_dir_name}/config"
+                                                                                
+                                                                                # Ensure config directory exists (should have been created by create_configs.py)
+                                                                                if [ -d "$config_dir" ]; then
+                                                                                    # Create hyperparameters CSV
+                                                                                    hyperparams_file="${config_dir}/hyperparameters.csv"
+                                                                                    
+                                                                                    # Write CSV header and data
+                                                                                    echo "parameter,value" > "$hyperparams_file"
+                                                                                    echo "with_logits,$WITH_LOGIT" >> "$hyperparams_file"
+                                                                                    echo "layers,\"$LAYERS\"" >> "$hyperparams_file"
+                                                                                    echo "num_grids,\"$NUM_GRIDS\"" >> "$hyperparams_file"
+                                                                                    echo "grid_min,\"$GRID_MIN\"" >> "$hyperparams_file"
+                                                                                    echo "grid_max,\"$GRID_MAX\"" >> "$hyperparams_file"
+                                                                                    echo "scale,\"$SCALE\"" >> "$hyperparams_file"
+                                                                                    echo "mode,$MODE" >> "$hyperparams_file"
+                                                                                    echo "residual,$RESIDUAL" >> "$hyperparams_file"
+                                                                                    echo "dynamic,$DYNAMIC" >> "$hyperparams_file"
+                                                                                    echo "no_normalize,$NO_NORMALIZE" >> "$hyperparams_file"
+                                                                                    echo "dropout,$DROPOUT" >> "$hyperparams_file"
+                                                                                    echo "epochs,$EPOCHS" >> "$hyperparams_file"
+                                                                                    echo "patience,$PATIENCE" >> "$hyperparams_file"
+                                                                                    echo "batch_size,$BATCH" >> "$hyperparams_file"
+                                                                                    echo "learning_rate,$LR" >> "$hyperparams_file"
+                                                                                    echo "optimizer,$OPTIMIZER" >> "$hyperparams_file"
+                                                                                    echo "weight_decay,$WEIGHT_DECAY" >> "$hyperparams_file"
+                                                                                    echo "momentum,$MOMENTUM" >> "$hyperparams_file"
+                                                                                    echo "seed,$SEED" >> "$hyperparams_file"
+                                                                                    echo "test_version,$TEST_VERSION" >> "$hyperparams_file"
+                                                                                    echo "experiment_number,$experiment_num" >> "$hyperparams_file"
+                                                                                    echo "config_hash,$exp_hash" >> "$hyperparams_file"
+                                                                                else
+                                                                                    echo "Warning: Config directory not found at $config_dir, skipping hyperparameters.csv"
+                                                                                fi
+                                                                            fi
+
+                                                                            # Wait for available job slot if running parallel
+                                                                            if [ $MAX_PARALLEL_JOBS -gt 1 ]; then
+                                                                                wait_for_jobs $MAX_PARALLEL_JOBS
+                                                                            fi
+
+                                                                            # Run experiment (in background if parallel)
+                                                                            if [ $MAX_PARALLEL_JOBS -gt 1 ]; then
+                                                                                run_experiment $experiment_num $total_experiments "$exp_hash" "$CONFIGS" $WITH_LOGIT "$TEST_VERSION" $no_pbar &
+                                                                            else
+                                                                                run_experiment $experiment_num $total_experiments "$exp_hash" "$CONFIGS" $WITH_LOGIT "$TEST_VERSION" $no_pbar
+                                                                                if [ $? -ne 0 ]; then
+                                                                                    ((failed_experiments++))
+                                                                                fi
+                                                                            fi
+
+                                                                            # Progress update (for sequential mode)
+                                                                            if [ $MAX_PARALLEL_JOBS -eq 1 ]; then
+                                                                                completed_experiments=$((experiment_num - failed_experiments))
+                                                                                echo ""
+                                                                                echo "Progress: $experiment_num/$total_experiments experiments completed"
+                                                                                echo "Success: $completed_experiments, Failed: $failed_experiments"
+                                                                                echo ""
+                                                                            fi
+                                                                        done
                                                                     done
                                                                 done
                                                             done

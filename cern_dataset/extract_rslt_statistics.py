@@ -53,7 +53,7 @@ if __name__ == '__main__':
     from kan_utils.utils import load_dict
     import kan_utils.plotter as plotter
 
-    # from kan_utils.config import *
+    from kan_utils.config import *
     # from prepare_dataset import build_dataset, expand_df_labels, normalize_dataset
     from prepare_dataset import create_labels
 
@@ -76,7 +76,7 @@ if __name__ == '__main__':
     plots_path = os.path.join(args.test_dir,'plot')
     os.makedirs(plots_path, exist_ok=True)
 
-    ## Training vs Validation Loss
+    # Training vs Validation Loss
     epochs   = np.asarray(list(history['train'].keys()), dtype=int)
     tr_loss  = [_['loss'] for _ in history['train'].values()]
     # [print(_) for _ in history['val'].values()]
@@ -121,7 +121,7 @@ if __name__ == '__main__':
     categories = create_labels(
         features    = model_config['input'],
         labels      = model_config['output'],
-        unify_labels= train_config['task'] == 'multiclass',
+        unify_labels= train_config['task'] in ('as_binary', 'multiclass'),
         save        = False,
     )
     os.makedirs(os.path.join(plots_path, args.epoch), exist_ok=True)
@@ -156,17 +156,17 @@ if __name__ == '__main__':
                 
         if len(pr_cols) == 1:
             cat = {val : key for key, val in types.items()}
-            pr_type = gt_slice[gt_cols[0]].apply(lambda row: cat[row > 0.5])
+            pr_type = pr_slice[pr_cols[0]].apply(lambda row: cat[row > 0.5])
         else :
             # Fix DataFrames
             pr_slice.columns = [col[col.find('_Is_')+4:] for col in pr_slice.columns]
             
             # Find probabilities of the unknown class
             if train_config['task'] == 'multiclass' :
-                pr_type = pr_slice.aggregate('argmax', axis=1).map(dict(enumerate(pr_slice.columns)))
+                pr_type = pr_slice.apply(np.argmax, axis=1).map(dict(enumerate(pr_slice.columns)))
             else :
                 pr_type = pr_slice
-            
+                
         cm = confusion_matrix(gt_type.values, pr_type.values, labels=class_names)
         save_path = os.path.join(plots_path, args.epoch, f'cm_{category}.png')
         plotter.plot_confusion_matrix(

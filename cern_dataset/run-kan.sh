@@ -4,24 +4,25 @@
 # Configuration arguments
 # -- Leave empty for default values
 ########################################
-TEST_VERSION=      # TestLoss  -linearly_normalized
+TEST_VERSION="normalized"      # TestLoss  -linearly_normalized
 SEED=42
 
 WITH_LOGITS="1"
-LAYERS="8"
-NUM_GRIDS="5"               #  4
-GRID_MIN=-1.0              # -1.2
-GRID_MAX=1.0               #  0.25
-SCALE=4                     #  2
-MODE='ELU'                # 'RSWAFF'
+LAYERS="16"
+NUM_GRIDS="6"               #  4
+GRID_MIN="-2.0 -1.0"                # "-0.5 -0.25"              # -1.2
+GRID_MAX="2.0 1.0"                 # "0.5 0.25"               #  0.25
+SCALE="2"                     #  2
+MODE='RSWAFF'                # 'RSWAFF' 'LeakyReLU'
 RESIDUAL=                   # 0 / 1
 DYNAMIC=                    # 0 / 1
-DROPOUT=0.25
+NO_NORMALIZE=1               # 0 / 1
+DROPOUT=0.15
 
 EPOCHS=1000
-PATIENCE=250
-BATCH=16384                   # 128
-LR=5e-2
+PATIENCE=25
+BATCH=16384                   # 128 16384
+LR=5e-3
 OPTIMIZER="AdamW"         # Adam RMSprop
 WEIGHT_DECAY=           # 5e-4
 MOMENTUM=                   # 0.9
@@ -65,6 +66,7 @@ usage () {
     echo "      -p, --purge            Purges any existing output files before generating them"
     echo "      --residual             Set the residual flag"
     echo "      --dynamic              Set the dynamic flag"
+    echo "      --no-normalize         Skip batch normalization"
     echo "      --hash                 The hash value of the configuration to use"
 }
 
@@ -93,6 +95,9 @@ while [ "$#" -gt 0 ] ; do
             shift ;;
         --dynamic)
             DYNAMIC=1
+            shift ;;
+        --no-normalize)
+            NO_NORMALIZE=1
             shift ;;
         --hash)
             exp_hash=$2
@@ -139,6 +144,9 @@ if [ ! -n "$exp_hash" ]; then
     fi 
     if [[ -n "$DYNAMIC" ]] && [[ "$DYNAMIC" -gt 0 ]]; then
         CONFIGS="$CONFIGS --dynamic"
+    fi
+    if [[ -n "$NO_NORMALIZE" ]] && [[ "$NO_NORMALIZE" -gt 0 ]]; then
+        CONFIGS="$CONFIGS --no-normalize"
     fi
     if [[ -n "$DROPOUT" ]] && [[ "$DROPOUT" ]]; then
         CONFIGS="$CONFIGS --dropout $DROPOUT"
@@ -191,8 +199,12 @@ if [ -n "$exp_hash" ]; then
     print_verbose [INFO] Configuration Hash: $exp_hash
 fi
 
-print_exec $THIS_DIR/train_model.py --hash $exp_hash
+if [ -n "$TEST_VERSION" ]; then
+    set_test_version="--test-version $TEST_VERSION"
+fi 
 
-print_exec $THIS_DIR/test_model.py --hash $exp_hash --epoch best
+print_exec $THIS_DIR/train_model.py --hash $exp_hash $set_test_version
 
-print_exec $THIS_DIR/extract_rslt_statistics.py --hash $exp_hash --epoch best
+print_exec $THIS_DIR/test_model.py --hash $exp_hash $set_test_version --epoch best
+
+print_exec $THIS_DIR/extract_rslt_statistics.py --hash $exp_hash $set_test_version --epoch best

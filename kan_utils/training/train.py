@@ -55,7 +55,7 @@ def train(
     :type epochs: int
     :param patience: The number of epochs to wait before early stopping.
     :type patience: int
-    :param sample_weight: If `True`, calculate the weighted criterion. Default : `False`
+    :param sample_weight: If `True`, calculate the weighted criterion. Default is `False`
     :type sample_weight: bool, Optional
     :param clip_limit: If specified and not `False`, the maximum norm of the gradients.
     :type clip_limit: float, bool, Optional
@@ -63,7 +63,7 @@ def train(
     :type history: dict[str, dict[int, dict[str, Union[float, list[float]]]]]
     :param start_epoch: The starting epoch number.
     :type start_epoch: int
-    :param update_limit: If specified, apply a limit to progress bar updates. Positive integers are treated as update periods. Floats are treated as percentile update periods. Default: `1000`
+    :param update_limit: If specified, apply a limit to progress bar updates. Positive integers are treated as update periods. Floats are treated as percentile update periods. Default is `1000`
     :type update_limit: bool, int, float, Optional
     :param top_dirname: The top directory to save training results.
     :type top_dirname: str
@@ -84,6 +84,7 @@ def train(
     '''
     best_loss = float('inf')
     val_loss = float('inf')
+    best_epoch = 0
     if len(history) == 0:
         history = {'train':{}, 'val':{}}
         
@@ -118,7 +119,7 @@ def train(
     else:
         pbar_epoch = range(start_epoch+1, start_epoch+epochs+1)
         
-    descr = 'Epoch {epoch} -- Tr Loss {tr_loss:.5f} -- Val Loss {val_loss:.5f} -- Best {best_loss:.5f}'
+    descr = 'Epoch {epoch} -- Tr Loss {tr_loss:.5f} -- Val Loss {val_loss:.5f} -- Best [{best_epoch}] {best_loss:.5f}'
     
     if update_limit:
         if 0 < update_limit <= 1. :
@@ -170,7 +171,7 @@ def train(
 
             try :
                 if show_pbar == 'external':
-                    pbar_epoch.set_description(descr.format(epoch=f"{epoch}[{0}/{len(pbar_iter)}]", tr_loss=tr_loss, val_loss=val_loss, best_loss=best_loss))
+                    pbar_epoch.set_description(descr.format(epoch=f"{epoch}[{0}/{len(pbar_iter)}]", tr_loss=tr_loss, val_loss=val_loss, best_epoch=best_epoch, best_loss=best_loss))
                    
                 for _iter, (data, target, *weights) in enumerate(pbar_iter, start=1):
                     data    = to(data, device)
@@ -194,6 +195,7 @@ def train(
                         'dataloader'       : train_dataloader, 
                         'device'           : device,
                         'history'          : history,
+                        'locals'           : locals,
                     }
                     loc_kwargs.update(callbacks_arguments)
                     for callback in callbacks['train_iter_start']:
@@ -248,13 +250,13 @@ def train(
                         
                     if _iter % update_period == 0:
                         if show_pbar == 'internal':
-                            pbar_iter.set_description(descr.format(epoch=epoch, tr_loss=tr_loss/_iter, val_loss=val_loss, best_loss=best_loss))
+                            pbar_iter.set_description(descr.format(epoch=epoch, tr_loss=tr_loss/_iter, val_loss=val_loss, best_epoch=best_epoch, best_loss=best_loss))
                         elif show_pbar == 'external':
-                            pbar_epoch.set_description(descr.format(epoch=f"{epoch}[{_iter}/{len(pbar_iter)}]", tr_loss=tr_loss/_iter, val_loss=val_loss, best_loss=best_loss))
+                            pbar_epoch.set_description(descr.format(epoch=f"{epoch}[{_iter}/{len(pbar_iter)}]", tr_loss=tr_loss/_iter, val_loss=val_loss, best_epoch=best_epoch, best_loss=best_loss))
                    
                 del data, target, prediction, loss
                     
-                tr_loss = float(tr_loss / len(train_dataloader))
+                tr_loss = float(tr_loss / _iter)
                 hist_train_epoch.update({'loss' : tr_loss})
                 
                 history['train'].update({epoch : hist_train_epoch})
@@ -312,11 +314,11 @@ def train(
                 val_loss = val_metrics['loss']
             
                 if show_pbar == 'internal':
-                    pbar_iter.set_description(descr.format(epoch=epoch, tr_loss=tr_loss, val_loss=val_loss, best_loss=best_loss))
+                    pbar_iter.set_description(descr.format(epoch=epoch, tr_loss=tr_loss, val_loss=val_loss, best_epoch=best_epoch, best_loss=best_loss))
                     pbar_iter.close()
                     
                 elif show_pbar == 'external':
-                    pbar_epoch.set_description(descr.format(epoch=epoch, tr_loss=tr_loss, val_loss=val_loss, best_loss=best_loss))
+                    pbar_epoch.set_description(descr.format(epoch=epoch, tr_loss=tr_loss, val_loss=val_loss, best_epoch=best_epoch, best_loss=best_loss))
                     
                 if _saving_steps > 0 and (epoch % _saving_steps == 0):
                     save_model(model, os.path.join(model_dirname,'last'), device)
@@ -326,10 +328,11 @@ def train(
                     best_loss = val_loss
                     save_model(model, os.path.join(model_dirname,'best'), device)   
                     patience_counter = 0
+                    best_epoch = epoch
                 elif patience is not None and patience > 1:
                     patience_counter += 1
                     
-                    if patience_counter > patience:
+                    if patience_counter >= patience:
                         break
                     
                 loc_kwargs = {

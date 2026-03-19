@@ -52,10 +52,10 @@ if __name__ == '__main__':
 
     from kan_utils.config import *
     from kan_utils.training import train
-    from kan_utils.utils import set_seed
+    from kan_utils.utils import set_seed, apply_to_tensor
     from kan_utils.performance import get_summary
 
-    from prepare_dataset import build_dataset, get_dataset_paths
+    from prepare_dataset import build_dataset, get_dataset_paths, normalize_data
     from custom_dataset import DistributedH5Dataset
     # import custom_callbacks
 
@@ -113,7 +113,7 @@ if __name__ == '__main__':
         task                    = train_config['task'],
         remove_mass_pt_window   = model_config['remove_mass_pt_window'],
         return_weights          = train_config['sample_weight'],
-        preprocess_data         = None,
+        preprocess_data         = lambda data, features = model_config['input']: normalize_data(data, features),
         preprocess_targ         = None,
     )
     val_loader    = DistributedH5Dataset(
@@ -124,7 +124,7 @@ if __name__ == '__main__':
         task                    = train_config['task'],
         remove_mass_pt_window   = model_config['remove_mass_pt_window'],
         return_weights          = train_config['sample_weight'],
-        preprocess_data         = None,
+        preprocess_data         = lambda data, features = model_config['input']: normalize_data(data, features),
         preprocess_targ         = None,
     )
     os.makedirs(os.path.join(args.test_dir, 'models'), exist_ok=True)
@@ -168,6 +168,7 @@ if __name__ == '__main__':
         patience            = train_config['patience'],
         update_limit        = False,
         sample_weight       = train_config['sample_weight'],
+        clip_limit          = 0.5,
         top_dirname         = args.test_dir,
         device              = device,
         evaluate_training   = False,

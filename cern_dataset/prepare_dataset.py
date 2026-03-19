@@ -252,6 +252,52 @@ def get_columns():
         columns = getattr(h5file.root, '__members__')
     return columns
 
+def normalize_data(data : np.ndarray, features : list[str]):
+    if '__stats_data' in globals().keys() :
+        pass
+    elif os.path.exists(os.path.join(__dataset_dir, 'tr_statistics.csv')):
+        __stats_data = pd.read_csv(
+            os.path.join(__dataset_dir, 'tr_statistics.csv'),
+            index_col='Column'
+        ).loc[features]
+        __stats_data['apply_mean'] = np.where(
+            np.isin( __stats_data['min'].values, (-1, -3, -50)),
+            __stats_data['max'].values / 2,
+            __stats_data['mean'].values
+        )
+        __stats_data['scale_factor'] = 2 ** (
+            -np.ceil(
+                np.log2(
+                    np.max(
+                        np.abs(__stats_data[['min','max']].values),
+                        axis = 1,
+            ))) + 1
+        )
+        globals()['__stats_data'] = __stats_data
+    else :
+        return data
+    
+    __stats_data = globals()['__stats_data']
+    
+    # Locate NaN values (val = -1, -3, -50)
+    hasna  = np.isin( __stats_data['min'].values.reshape(1,-1), (-1, -3, -50))
+    condna = (data == __stats_data['min'].values.reshape(1,-1)) & hasna
+    
+    # Apply scale to non NaN elements and -1 to NaN elements
+    data = np.where(
+        condna,
+        -2,
+        (data - __stats_data['apply_mean'].values.reshape(1,-1)) * __stats_data['scale_factor'].values.reshape(1,-1)
+        # data * __stats_data['scale_factor'].values.reshape(1,-1)
+    )
+    # data = (data - __stats_data['apply_mean'].values.reshape(1,-1)) * __stats_data['scale_factor'].values.reshape(1,-1)
+    # print(hasna.tolist())
+    # print(condna.tolist())
+    # print(data.tolist())
+    # exit()
+    return data
+
+
 if __name__ == '__main__':
     # Download latest version
     df = build_dataset()
