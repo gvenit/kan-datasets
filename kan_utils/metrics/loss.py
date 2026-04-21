@@ -220,6 +220,19 @@ class MultiHeadLoss(MultiHead):
                     targs
                 )
         )
+        # loss = ()
+        # for key, head, pred, targ in zip(
+        #     keys,
+        #     heads,
+        #     # self.heads if isinstance(self.heads, torch.nn.ModuleList) else self.heads.values(),
+        #     preds,
+        #     targs
+        # ):
+        #     print('MultiHeadLoss', key, pred.shape, targ.shape)
+        #     print(pred[0])
+        #     print(targ[0])
+        #     loss += head(pred, targ),
+            
         if self.reduction == 'sum':
             return torch.stack(loss).sum()
         elif self.reduction == 'mean':
@@ -262,15 +275,8 @@ class CombinedLoss(torch.nn.Module):
         self.w = torch.nn.Parameter(torch.zeros([len(self.loss)], requires_grad=True))
 
     def forward(self, *args, **kwargs):
-        # print(pred.min(), pred.max())
-        # print(targ.min(), targ.max())
-        # loss = torch.stack([
-        #     loss(pred, targ)
-        #         for loss in self.loss
-        # ])
-        # print('Debug', loss)
-        # return torch.exp(-self.w) @ loss + self.w.mean()
         return torch.exp(-self.w) @ torch.stack([
+            # print(loss, args[1].sum(-1)) or loss(*args, **kwargs)
             loss(*args, **kwargs)
                 for loss in self.loss
         ]) + self.w.sum()

@@ -27,7 +27,6 @@ if __name__ == '__main__':
     from kan_utils.config.config import load_config, instantiate
     from kan_utils.utils import load_model, save_model, save_dict
     from kan_utils.quantization import FixedPointFasterKAN, FloatWrapperModule
-    from kan_utils.quantization.old.parameter_transform import packetize_model_to_bin
     
     from prepare_dataset import build_dataset, get_dataset_paths, normalize_data
     from custom_dataset import DistributedH5Dataset

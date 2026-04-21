@@ -5,7 +5,7 @@ import copy
 
 # Local imports
 from kan_utils.models import FasterKAN, FasterKANLayer
-from kan_utils.models.fasterkan import RadialBasisFunction
+from kan_utils.models import RadialBasisFunction, RSWAFF
 
 def _infer_rbf_mode(rsf_auto) -> str:
     """Infer the mode string from an RSFAuto instance.
@@ -127,7 +127,9 @@ def quantize_fixed_point(tensor: torch.Tensor, frac_bits: int, bit_width: int, u
     Returns:
         torch.Tensor: Quantized tensor in fixed-point format.
     """
-    
+    target_dtype = get_dtype(bit_width, unsigned)
+    if tensor.dtype == target_dtype:
+        return tensor
     scale = 2 ** frac_bits
     if unsigned:
         max_val = 2 ** (bit_width)-1
@@ -135,7 +137,8 @@ def quantize_fixed_point(tensor: torch.Tensor, frac_bits: int, bit_width: int, u
     else:
         max_val = 2 ** (bit_width-1)-1
         min_val = -2 ** (bit_width-1)
-    quantized = torch.clamp((tensor * scale).round(), min_val, max_val).to(get_dtype(bit_width, unsigned))
+    # print(scale, min_val, max_val)
+    quantized = torch.clamp((tensor * scale).round(), min_val, max_val).to(target_dtype)
     return quantized
 
 def dequantize_fixed_point(tensor: torch.Tensor, frac_bits: int = 0) -> torch.Tensor:
@@ -147,7 +150,8 @@ def dequantize_fixed_point(tensor: torch.Tensor, frac_bits: int = 0) -> torch.Te
     Returns:
         torch.Tensor: The dequantized tensor as float32.
     """
-    
+    if tensor.dtype == torch.float32:
+        return tensor 
     return tensor.to(torch.float32) / (2 ** frac_bits)
 
 
@@ -179,10 +183,14 @@ class FixedPointFasterKANLayer(nn.Module):
 
         # Resolve activation mode before __common_init (which sets up rbf_func)
         if 'fasterKANLayer' in kwargs:
-            self.mode = _infer_rbf_mode(kwargs['fasterKANLayer'].rbf)  # rbf is RSFAuto
+            mode = _infer_rbf_mode(kwargs['fasterKANLayer'].rbf)  # rbf is RSFAuto
         else:
-            self.mode = kwargs.get('mode', 'RSWAFF')
+            mode = kwargs.get('mode', 'RSWAFF')
 
+        if isinstance(mode, torch.nn.Sequential) and isinstance(next(mode.children()), RSWAFF):
+            mode = 'RSWAFF'
+        self.mode = mode 
+        
         self.__common_init(dtype_dict=dtype_dict, frac_bits_dict=frac_bits_dict, hardtanh=hardtanh, collect_stats=collect_stats)
         
         if 'fasterKANLayer' in kwargs.keys():
@@ -251,12 +259,12 @@ class FixedPointFasterKANLayer(nn.Module):
         self.dtype_dict.update(dtype_dict)
         
         dtype_matmul, unsigned_matmul = resolve_dtype(*self.dtype_dict['actf'],*self.dtype_dict['weight'],reduction='mlt')
-        dtype_matmul += 8
+        # dtype_matmul += 7
         
         self.dtype_dict.update({
             'sdff_int' : resolve_dtype(*self.dtype_dict['grid'],*self.dtype_dict['scale'],reduction='mlt'),
             'actf_int' : resolve_dtype(*self.dtype_dict['sdff'],*self.dtype_dict['sdff'],reduction='mlt'),
-            'matmul' : (dtype_matmul,unsigned_matmul),
+            'matmul'   : (dtype_matmul, unsigned_matmul),
         })
         self.torch_dtype = {
             key : get_dtype(*value)
@@ -476,13 +484,11 @@ class FixedPointFasterKANLayer(nn.Module):
         
         batch_size = x.size(0)
         
-        
         # == RSWAF with proper scaling ==
         # 1. Operation: Diff = input - grid
-        x_int   = x.view(batch_size, -1).to(self.torch_dtype['sdff_int']).unsqueeze(-1)
-        grid_int = self.grid.to(self.torch_dtype['sdff_int'])
-        diff    = x_int - grid_int
-        scale = self.inv_denom.to(self.torch_dtype['sdff_int'])        
+        x_int   = x.unsqueeze(-1)
+        diff    = (x_int - self.grid).to(self.torch_dtype['sdff_int'])
+        scale   = self.inv_denom.to(self.torch_dtype['sdff_int'])        
         
         # 2. Operation: Scaled = diff * inv_denom
         sdff = torch.bitwise_right_shift(
@@ -495,8 +501,10 @@ class FixedPointFasterKANLayer(nn.Module):
         if self.hardtanh and self.mode == 'RSWAFF':
             sdff = sdff.to(self.torch_dtype['actf_int'])
             act = self.one - self.tanh(sdff) ** 2
-            act = torch.bitwise_right_shift(act,
-                self.frac_bits_dict['actf_int'] - self.frac_bits_dict['actf']).to(self.torch_dtype['actf'])
+            act = torch.bitwise_right_shift(
+                act,
+                self.frac_bits_dict['actf_int'] - self.frac_bits_dict['actf']
+            ).to(self.torch_dtype['actf'])
         else:
             sdff = sdff.float() / (2 ** self.frac_bits_dict['sdff'])
             if self.mode == 'RSWAFF':
@@ -505,25 +513,111 @@ class FixedPointFasterKANLayer(nn.Module):
                 act = self.rbf_func(sdff)
             act = quantize_fixed_point(act, self.frac_bits_dict['actf'], *self.dtype_dict['actf'])
         
+        act_reshaped = act.view(batch_size, -1)
+        act_frac_bits = self.frac_bits_dict['actf']
         
-        # == Linear layer (float simulation with quantized parameters) ==
-        # Integer accumulation over many elements (e.g. 784) with int64 inputs can
-        # overflow int32 inside PyTorch's reduction kernel, giving wrong results.
-        # Dequantize act and weight to float32, compute the matmul in float32, then
-        # requantize the output — this is standard simulated-quantization practice
-        # and gives numerically correct results.
-        act_reshaped = act.view(batch_size, -1).float() / (2 ** self.frac_bits_dict['actf'])
-        if self.rbf_norm is not None:
-            act_reshaped = self.rbf_norm(act_reshaped)
-        weights_float = self.weight.float() / (2 ** self.frac_bits_dict['weight'])
-
-        output = torch.nn.functional.linear(act_reshaped, weights_float)
-        output = quantize_fixed_point(output, self.frac_bits_dict['result'], *self.dtype_dict['result'])
+        # Bitwidth correction
+        if "aten::_int_mm" in torch.ops.aten.__dict__ and self.torch_dtype['weight'] == torch.int8:
+            if self.dtype_dict['weight'][0] != self.dtype_dict['actf'][0]:
+                act_reshaped = act_reshaped.to(
+                    get_dtype(self.dtype_dict['actf'][0], False)
+                ) >> (
+                    self.dtype_dict['actf'][0] - self.dtype_dict['weight'][0]
+                )
+                act_frac_bits -= (self.dtype_dict['actf'][0] - self.dtype_dict['weight'][0])
+                
+            act_reshaped = act_reshaped.to(self.torch_dtype['weight'])
+            
+            weight = self.weight.T
+            if weight.is_cuda:
+                if act_reshaped.size(0) < 32:
+                    act_reshaped = torch.nn.functional.pad(
+                        act_reshaped, 
+                        (0, 0, 0, 32-act_reshaped.size(0))
+                    )
+                elif act_reshaped.size(0) % 8 != 0:
+                    act_reshaped = torch.nn.functional.pad(
+                        act_reshaped, 
+                        (0, 0, 0, 8 - (act_reshaped.size(0) % 8))
+                    )
+                if act_reshaped.size(1) < 32:
+                    act_reshaped = torch.nn.functional.pad(
+                        act_reshaped, 
+                        (0, 32-act_reshaped.size(1), 0, 0)
+                    )
+                elif act_reshaped.size(1) % 8 != 0:
+                    act_reshaped = torch.nn.functional.pad(
+                        act_reshaped, 
+                        (0, 8 - (act_reshaped.size(1) % 8), 0, 0)
+                    )
+                if weight.size(0) < 32:
+                    weight = torch.nn.functional.pad(
+                        weight, 
+                        (0, 0, 0, 32-weight.size(0))
+                    )
+                elif weight.size(0) % 8 != 0:
+                    weight = torch.nn.functional.pad(
+                        weight, 
+                        (0, 0, 0, 8 - (weight.size(0) % 8))
+                    )
+                if weight.size(1) < 32:
+                    weight = torch.nn.functional.pad(
+                        weight, 
+                        (0, 32-weight.size(1), 0, 0)
+                    )
+                elif weight.size(1) % 8 != 0:
+                    weight = torch.nn.functional.pad(
+                        weight, 
+                        (0, 8 - (weight.size(1) % 8), 0, 0)
+                    )
+            
+            output = torch._int_mm(
+                act_reshaped, 
+                weight,
+            )
+            if self.dtype_dict['actf'][1]:
+                weight_sum = weight.sum(-1) * 2**(self.dtype_dict['weight'][0]-1)
+                output += weight_sum
+                
+            # else:
+            #     act_reshaped = act_reshaped.to(self.torch_dtype['matmul'])
+            #     weight       = weight.to(self.torch_dtype['matmul']).T
+            #     output = torch.nn.functional.linear(
+            #         act_reshaped, 
+            #         weight,
+            #     )
+            #     if self.dtype_dict['actf'][1]:
+            #         weight_sum = torch.nn.functional.linear(
+            #             torch.ones_like(act_reshaped), 
+            #             weight,
+            #         ) * 2**(self.dtype_dict['weight'][0]-1)
+            #         output += weight_sum
+                
+            output = output[:batch_size, :self.weight.size(0)]
+            
+            shift = self.frac_bits_dict['weight'] + act_frac_bits - self.frac_bits_dict['result']
+            output = quantize_fixed_point(output, shift, *self.dtype_dict['result'])
+        else :
+            if self.weight.T.is_cuda:
+                output = torch.matmul(
+                    dequantize_fixed_point(act_reshaped, act_frac_bits),
+                    dequantize_fixed_point(self.weight.T, self.frac_bits_dict['weight'])
+                )
+                output = quantize_fixed_point(output, self.frac_bits_dict['result'], *self.dtype_dict['result'])
+            else:
+                output = torch.matmul(
+                    act_reshaped.to(self.torch_dtype['matmul']), 
+                    self.weight.T.to(self.torch_dtype['matmul'])
+                )
+                shift = self.frac_bits_dict['weight'] + act_frac_bits - self.frac_bits_dict['result']
+                output = quantize_fixed_point(output, self.frac_bits_dict['result'], *self.dtype_dict['result'])
+        # print(output.dtype)
+        
+        # print(output) 
         
         if (self.collect_stats):
             self.track_max = max(self.track_max, output.max())
             self.track_min = min(self.track_min, output.min())
-        
 
         # # DEBUG PRINTS:
         # print(f"Input range: {x_q.min().item()} to {x_q.max().item()}")
@@ -765,8 +859,10 @@ class FixedPointFasterKAN(nn.Module):
         return f"residual={tuple(self.residual)}"
 
     def forward(self, x: torch.Tensor, **kwargs) -> torch.Tensor:
+        x = torch.flatten(x,1)
         for _iter, (layer, res) in enumerate(zip(self.layers, self.residual)):
             if self.normalize:
+                x = dequantize_fixed_point(x, layer.frac_bits_dict['grid'])
                 x = self.normalize[_iter](x.float())
             # Quantize the (normalized) float input to this layer's grid fixed-point scale.
             # Without this, the float values from LayerNorm would be truncated to integers

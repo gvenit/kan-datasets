@@ -558,8 +558,11 @@ class FasterKANLayer(nn.Module):
         if normalize_rbf:
             self.rbf_norm = nn.LayerNorm(input_dim * num_grids)
         self.linear = nn.Linear(input_dim * num_grids, output_dim, bias=USE_BIAS_ON_LINEAR) 
-        self.drop = nn.Dropout(0 if dropout_rate is None else dropout_rate)
-        self.drop_linear = nn.Dropout(0 if dropout_linear is None else dropout_linear) 
+        
+        self.drop = nn.Dropout(0 if dropout_rate is None else float(dropout_rate))
+        self.drop_linear = nn.Dropout(0 if dropout_linear is None else float(dropout_linear))
+        # self.drop = nn.Dropout(0 if dropout_rate is None else dropout_rate)
+        # self.drop_linear = nn.Dropout(0 if dropout_linear is None else dropout_linear) 
 
     def forward(self, x):
         """
@@ -786,7 +789,7 @@ class FasterKAN(nn.Module):
         self.is_eval = True
         self.train_grid = False
         self.train_inv_denominator = False
-        super().eval()
+        return super().eval()
 
     def train(self, mode=True):
         """
@@ -798,7 +801,7 @@ class FasterKAN(nn.Module):
         self.is_eval = not mode
         self.train_grid = mode
         self.train_inv_denominator = mode
-        super().train(mode)
+        return super().train(mode)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -816,107 +819,52 @@ class FasterKAN(nn.Module):
             else :
                 x = layer(x)
         return x
-    
-# # @torch.compile
-# class InterleavedFasterKAN(nn.Module):
-#     """
-#     InterleavedFasterKAN: Radial Basis Function-based Kolmogorov-Arnold Network.
-#     This model stacks multiple FasterKANLayers to create a deep RBF-KAN architecture.
-    
-#     Args:
-#         hidden_layers (List[int]): List of layer dimensions including input and output dimensions
-#             e.g., [784, 100, 10] for MNIST classification with one hidden layer
-#         num_grids (Union[int, List[int]]): Number of grid points for each layer
-#             If a single int is provided, it's used for all layers
-#         grid_min (float): Minimum value for grid points
-#         grid_max (float): Maximum value for grid points
-#         inv_denominator (float): Initial value for inverse denominator parameter
-    
-#     Attributes:
-#         train_grid (bool): Whether grid points are being updated during training
-#         train_inv_denominator (bool): Whether inv_denominator is being updated during training
-#         layers (nn.ModuleList): List of FasterKANLayer modules
-#         is_eval (bool): Whether the model is in evaluation mode
-    
-#     Example:
-#         ```python
-#         model = FasterKAN([784, 100, 10], num_grids=10, grid_min=-3.0, grid_max=3.0, inv_denominator=1.0)
-#         output = model(input_tensor)  # Shape: [batch_size, 10]
-#         ```
-#     """
-#     def __init__(
-#         self, hidden_layers: List[int], 
-#         num_grids: Union[int, List[int]],
-#         grid_min: float,
-#         grid_max: float,
-#         inv_denominator: float
-#     ):
-#         super(InterleavedFasterKAN, self).__init__()
 
-#         self.train_grid = True
-#         self.train_inv_denominator = True
+@overload
+def fuse_faster_kan(sequential : nn.Sequential) -> FasterKAN:
+    ...
+    
+@overload
+def fuse_faster_kan(*args : FasterKAN) -> FasterKAN:
+    ...
+    
+def fuse_faster_kan(*args) -> FasterKAN:
+    if isinstance(args[0], nn.Sequential):
+        args = args[0].modules()
         
-#         num_grids       = expand_value(num_grids,       len(hidden_layers)-1)
-#         grid_min        = expand_value(grid_min,        len(hidden_layers)-1)
-#         grid_max        = expand_value(grid_max,        len(hidden_layers)-1)
-#         inv_denominator = expand_value(inv_denominator, len(hidden_layers)-1)
-
-#         self.layers = nn.ModuleList([
-#             FasterKANLayer(
-#                 train_grid=self.train_grid,
-#                 train_inv_denominator=self.train_inv_denominator,
-#                 input_dim=in_dim, 
-#                 output_dim=out_dim, 
-#                 grid_min=grid_min_i,
-#                 grid_max=grid_max_i,
-#                 num_grids=num_grids_i,
-#                 inv_denominator=inv_denominator_i
-#             ) for _iter, (
-#                 num_grids_i, 
-#                 in_dim, 
-#                 out_dim, 
-#                 grid_min_i, 
-#                 grid_max_i, 
-#                 inv_denominator_i, 
-#             ) in enumerate(zip(
-#                 num_grids, 
-#                 hidden_layers[:-1], 
-#                 hidden_layers[1:],
-#                 grid_min,
-#                 grid_max,
-#                 inv_denominator,
-#             ))
-#         ])
-
-#     def eval(self):
-#         """
-#         Set the model to evaluation mode, disabling grid and inv_denominator parameter updates.
-#         """
-#         self.is_eval = True
-#         self.train_grid = False
-#         self.train_inv_denominator = False
-#         super().eval()
-
-#     def train(self, mode=True):
-#         """
-#         Set the model to training mode, enabling updates to grid and inv_denominator parameters.
+    model = FasterKAN(
+        hidden_layers   = [0],
+        num_grids       = [],
+        grid_min        = [],
+        grid_max        = [],
+        inv_denominator = [],
+        mode            ='RSWAFF',
+        residual        = [],
+        dynamic         = False,
+        use_v2          = False,
+        normalize       = False,
+        normalize_rbf   = False,
+    )
+    model.normalize = nn.ModuleList([])
+    for _iter, init_model in enumerate(args):
+        if not isinstance(init_model, FasterKAN):
+            warn(f'Model {_iter} is not FasterKAN (type is {type(init_model)}). Skipping...')
+            continue
         
-#         Args:
-#             mode (bool): Whether to enable training mode (True) or evaluation mode (False)
-#         """
-#         self.is_eval = not mode
-#         self.train_grid = mode
-#         self.train_inv_denominator = mode
-#         super().train(mode)
-
-#     def forward(self, x: torch.Tensor) -> torch.Tensor:
-#         """
-#         Args:
-#             x (torch.Tensor): Input tensor [batch_size, input_dim]
-            
-#         Returns:
-#             torch.Tensor: Output tensor [batch_size, output_dim]
-#         """
-#         for layer in self.layers:
-#             x = layer(x)
-#         return x
+        model.layers.extend(init_model.layers)
+        
+        model.residual.extend(init_model.residual)
+        
+        if init_model.normalize:
+            model.normalize.extend(init_model.normalize)
+        else :
+            model.normalize.extend([nn.Identity() for _ in init_model.layers])
+    
+    if len(model.layers) == 0:
+        raise ValueError(f'No FasterKAN models were provided; got {[type(_) for _ in args]}')
+    
+    if sum(not isinstance(_, nn.Identity) for _ in model.normalize) == 0:
+        del model.normalize 
+        model.normalize = False
+        
+    return model
