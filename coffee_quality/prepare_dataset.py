@@ -15,7 +15,7 @@ from date_cleaner import date_parser, calculate_month_difference, months_to_int_
 # CONFIGURATION
 # ============================================================================
 
-THIS_DIR = os.path.dirname(__file__)
+THIS_DIR = os.path.dirname(os.path.realpath(__file__))
 TOP_DIR = os.path.dirname(THIS_DIR)
 sys.path.append(TOP_DIR)
 

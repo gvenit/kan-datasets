@@ -1,2 +1,4 @@
 dataset/
 train/
+*.*/
+*.exe*

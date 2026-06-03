@@ -1,7 +1,7 @@
 from typing import Literal
 import sys, os
 
-THIS_DIR = os.path.dirname(__file__)
+THIS_DIR = os.path.dirname(os.path.realpath(__file__))
 TOP_DIR = os.path.dirname(THIS_DIR)
 sys.path.append(TOP_DIR)
 
@@ -83,7 +83,7 @@ def expand_df_labels(
     return df[df.columns.sort_values()]  
 
 def build_dataset(force = False):
-    dataset_path = os.path.join(__dataset_dir,'fix.csv')
+    dataset_path = os.path.join(__dataset_dir,'heart_disease.csv')
     if force or not os.path.exists(dataset_path):
         os.environ['KAGGLE_CONFIG_DIR'] = TOP_DIR
         import kagglehub
@@ -95,7 +95,7 @@ def build_dataset(force = False):
     return get_dataset()
 
 def get_dataset():
-    dataset_path = os.path.join(__dataset_dir,'Ship_Performance_Dataset.csv')
+    dataset_path = os.path.join(__dataset_dir,'heart_disease.csv')
     df = pd.read_csv(dataset_path)
     for col in df.dtypes[df.dtypes == 'object'].index:
         if col == 'Date':
@@ -162,9 +162,9 @@ def normalize_dataset(
 
 if __name__ == '__main__':
     # Download latest version
-    print('FIX THIS')
-    exit()
     df = build_dataset()
+    # print('FIX THIS')
+    # exit()
 
     label_dict = create_labels(df, force=True)
         

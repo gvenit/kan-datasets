@@ -4,7 +4,7 @@ import json
 from argparse import ArgumentParser
 from prepare_dataset import get_prepared_dataset, NUMERIC_COLS, QUALITY_SCORE_COLS, CATEGORY_COLS, STATS_PATH
 
-THIS_DIR = os.path.dirname(__file__)
+THIS_DIR = os.path.dirname(os.path.realpath(__file__))
 TOP_DIR = os.path.dirname(THIS_DIR)
 sys.path.append(TOP_DIR)
 

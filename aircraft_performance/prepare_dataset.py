@@ -1,7 +1,7 @@
 from typing import Literal
 import sys, os
 
-THIS_DIR = os.path.dirname(__file__)
+THIS_DIR = os.path.dirname(os.path.realpath(__file__))
 TOP_DIR = os.path.dirname(THIS_DIR)
 sys.path.append(TOP_DIR)
 
@@ -65,9 +65,7 @@ def expand_df_labels(
     for col, labels in label_dict.items():
         for label in labels.keys():
             if label != 'NaN' :
-                df[f'{col}_Is_{label}'] = df[col].apply(
-                    lambda row : int(row == label)
-                )
+                df[f'{col}_Is_{label}'] = np.equal(df[col].values, label).astype(int8)
             else :
                 df[f'{col}_Is_Unknown'] = df[col].apply(
                     lambda row : str(row).lower() == 'nan'
@@ -76,10 +74,7 @@ def expand_df_labels(
         df.drop(labels=col, axis=1, inplace=True)
         
     if 'Date' in df.columns:
-        df['Date'] = pd.to_datetime(df['Date'])
-        df['Date'] = df['Date'].apply(
-            lambda row : row.day_of_year
-        )
+        df['Date'] = [_.day_of_year for _ in pd.to_datetime(df['Date'])]
     return df[df.columns.sort_values()]  
 
 def build_dataset(force = False):

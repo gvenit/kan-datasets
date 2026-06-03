@@ -7,8 +7,6 @@ import nibabel as nib
 import albumentations as A
 import os
 
-global_pool = torch.multiprocessing.get_context().Pool(processes=torch.multiprocessing.cpu_count())
-
 class SwapAxes3D (A.Transform3D):
     def __init__(
         self, 

@@ -1,7 +1,7 @@
 #! /usr/bin/env python3
 import sys, os
 
-THIS_DIR = os.path.dirname(__file__)
+THIS_DIR = os.path.dirname(os.path.realpath(__file__))
 TOP_DIR = os.path.dirname(THIS_DIR)
 sys.path.append(TOP_DIR)
 

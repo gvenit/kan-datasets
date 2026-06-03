@@ -2,7 +2,7 @@
 from typing import Literal
 import sys, os
 
-THIS_DIR = os.path.dirname(__file__)
+THIS_DIR = os.path.dirname(os.path.realpath(__file__))
 TOP_DIR = os.path.dirname(THIS_DIR)
 sys.path.append(TOP_DIR)
 
@@ -165,14 +165,22 @@ def make_groups(df) :
     
     return group(
         df, 
-        label_dict = {
-            'Num_Scans' : num_scan_labels,
-            'CDR'       : cdr_labels,
-            'M/F'       : sex_labels,
-            'Age_Group' : age_labels,
-            'Educ'      : edu_labels,
-            'SES'       : ses_labels,
-        },
+        labels = [
+            'Num_Scans',
+            'CDR',
+            'M/F',
+            'Age_Group',
+            'Educ',
+            'SES',
+        ],
+        # label_dict = {
+        #     'Num_Scans' : num_scan_labels,
+        #     'CDR'       : cdr_labels,
+        #     'M/F'       : sex_labels,
+        #     'Age_Group' : age_labels,
+        #     'Educ'      : edu_labels,
+        #     'SES'       : ses_labels,
+        # },
     )
     
 def __save_groups(groups):
