@@ -25,7 +25,7 @@ NO_NORMALIZE_RBF=0         # 0 / 1  Disable RBF normalization (default: enabled)
 
 # Training
 DROPOUT=0.0
-LINEAR_DROPPOUT=0
+LINEAR_DROPOUT=0
 
 EPOCHS=1000
 PATIENCE=50
@@ -181,8 +181,8 @@ if [ ! -n "$exp_hash" ]; then
     if [[ -n "$DROPOUT" ]] && [[ "$DROPOUT" ]]; then
         CONFIGS="$CONFIGS --dropout $DROPOUT"
     fi 
-    if [[ -n "$LINEAR_DROPPOUT" ]] && [[ "$LINEAR_DROPPOUT" ]]; then
-        CONFIGS="$CONFIGS --dropout-linear $LINEAR_DROPPOUT"
+    if [[ -n "$LINEAR_DROPOUT" ]] && [[ "$LINEAR_DROPOUT" ]]; then
+        CONFIGS="$CONFIGS --dropout-linear $LINEAR_DROPOUT"
     fi 
     if [ -n "$TEST_VERSION" ]; then
         CONFIGS="$CONFIGS --test-version $TEST_VERSION"
